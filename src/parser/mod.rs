@@ -9077,9 +9077,12 @@ impl<'a> Parser<'a> {
                 Err(e) => return Err(e),
             };
 
-            let with_offset = match self.expect_keywords(&[Keyword::WITH, Keyword::OFFSET]) {
+            let with_offset = match self.expect_keywords(&[Keyword::WITH, Keyword::ORDINALITY]) {
                 Ok(()) => true,
-                Err(_) => false,
+                Err(_) => match self.expect_keywords(&[Keyword::WITH, Keyword::OFFSET]) {
+                    Ok(()) => true,
+                    Err(_) => false,
+                },
             };
 
             let with_offset_alias = if with_offset {

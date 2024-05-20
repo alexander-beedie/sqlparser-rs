@@ -5241,7 +5241,7 @@ fn parse_unnest_in_from_clause() {
             "SELECT * FROM UNNEST({}){}{}{}",
             array_exprs,
             if alias { " AS numbers" } else { "" },
-            if with_offset { " WITH OFFSET" } else { "" },
+            if with_offset { " WITH ORDINALITY" } else { "" },
             if with_offset_alias {
                 " AS with_offset_alias"
             } else {

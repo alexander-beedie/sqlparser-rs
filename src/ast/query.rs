@@ -1324,7 +1324,7 @@ impl fmt::Display for TableFactor {
                     write!(f, " AS {alias}")?;
                 }
                 if *with_offset {
-                    write!(f, " WITH OFFSET")?;
+                    write!(f, " WITH ORDINALITY")?;
                 }
                 if let Some(alias) = with_offset_alias {
                     write!(f, " AS {alias}")?;
