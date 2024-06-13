@@ -483,7 +483,7 @@ impl<'a> Parser<'a> {
                 Keyword::DESCRIBE => Ok(self.parse_explain(DescribeAlias::Describe)?),
                 Keyword::EXPLAIN => Ok(self.parse_explain(DescribeAlias::Explain)?),
                 Keyword::ANALYZE => Ok(self.parse_analyze()?),
-                Keyword::SELECT | Keyword::WITH | Keyword::VALUES => {
+                Keyword::SELECT | Keyword::TABLE | Keyword::WITH | Keyword::VALUES => {
                     self.prev_token();
                     Ok(Statement::Query(self.parse_boxed_query()?))
                 }
