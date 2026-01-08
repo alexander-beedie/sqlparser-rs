@@ -25,6 +25,7 @@ mod hive;
 mod mssql;
 mod mysql;
 mod oracle;
+mod overrides;
 mod postgresql;
 mod redshift;
 mod snowflake;
@@ -47,15 +48,19 @@ pub use self::hive::HiveDialect;
 pub use self::mssql::MsSqlDialect;
 pub use self::mysql::MySqlDialect;
 pub use self::oracle::OracleDialect;
+pub use self::overrides::DialectOverrides;
 pub use self::postgresql::PostgreSqlDialect;
 pub use self::redshift::RedshiftSqlDialect;
 pub use self::snowflake::SnowflakeDialect;
 pub use self::sqlite::SQLiteDialect;
+
 use crate::ast::{ColumnOption, Expr, GranteesType, Ident, ObjectNamePart, Statement};
 pub use crate::keywords;
 use crate::keywords::Keyword;
 use crate::parser::{Parser, ParserError};
 use crate::tokenizer::Token;
+
+pub use crate::derive_dialect;
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -1336,6 +1341,96 @@ mod tests {
 
     fn parse_dialect(v: &str) -> Box<dyn Dialect> {
         dialect_from_str(v).unwrap()
+    }
+
+    #[test]
+    fn test_dialect_override() {
+        use crate::parser::Parser;
+        let generic = GenericDialect {};
+
+        // GenericDialect does not usually support "ORDER BY ALL"
+        assert!(!Dialect::supports_order_by_all(&generic));
+
+        // Create a GenericDialect variant that *does* support it
+        let overridden = DialectOverrides::new(GenericDialect {}).supports_order_by_all(true);
+        assert!(Dialect::supports_order_by_all(&overridden));
+
+        let sql = "SELECT * FROM some_table ORDER BY ALL";
+        let result = Parser::new(&overridden)
+            .try_with_sql(sql)
+            .unwrap()
+            .parse_statements();
+        assert!(
+            result.is_ok(),
+            "Failed to parse with overridden dialect: {:?}",
+            result.err()
+        );
+    }
+
+    #[test]
+    fn test_multiple_dialect_overrides() {
+        let dialect = DialectOverrides::new(GenericDialect {})
+            .supports_order_by_all(true)
+            .supports_nested_comments(true)
+            .supports_triple_quoted_string(true);
+
+        assert!(Dialect::supports_order_by_all(&dialect));
+        assert!(Dialect::supports_nested_comments(&dialect));
+        assert!(Dialect::supports_triple_quoted_string(&dialect));
+    }
+
+    #[test]
+    fn test_dialect_overrides_identity() {
+        // Check that the dialect identity is preserved...
+        let generic = GenericDialect {};
+        let overridden = DialectOverrides::new(generic);
+        let overridden_ref: &dyn Dialect = &overridden;
+        assert!(overridden_ref.is::<GenericDialect>());
+
+        // ...unless you wrap a custom dialect
+        #[derive(Debug)]
+        struct SecretSquirrelDialect {
+            inner: GenericDialect,
+        }
+
+        impl SecretSquirrelDialect {
+            fn new() -> Self {
+                Self {
+                    inner: GenericDialect {},
+                }
+            }
+        }
+
+        impl Dialect for SecretSquirrelDialect {
+            fn is_identifier_start(&self, ch: char) -> bool {
+                self.inner.is_identifier_start(ch)
+            }
+
+            fn is_identifier_part(&self, ch: char) -> bool {
+                self.inner.is_identifier_part(ch)
+            }
+        }
+        let custom_dialect =
+            DialectOverrides::new(SecretSquirrelDialect::new()).supports_order_by_all(true);
+        let custom_ref: &dyn Dialect = &custom_dialect;
+
+        assert!(!custom_ref.is::<GenericDialect>());
+        assert!(custom_ref.is::<SecretSquirrelDialect>());
+    }
+
+    #[test]
+    fn test_dialect_overrides_with_other_bases() {
+        let pg_overridden = DialectOverrides::new(PostgreSqlDialect {}).supports_order_by_all(true);
+
+        assert!(Dialect::supports_order_by_all(&pg_overridden));
+        assert!(Dialect::supports_filter_during_aggregation(&pg_overridden));
+
+        let mysql_overridden = DialectOverrides::new(MySqlDialect {}).supports_order_by_all(true);
+
+        assert!(Dialect::supports_order_by_all(&mysql_overridden));
+        assert!(Dialect::supports_string_literal_backslash_escape(
+            &mysql_overridden
+        ));
     }
 
     #[test]
