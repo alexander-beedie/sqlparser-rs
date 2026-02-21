@@ -1662,6 +1662,53 @@ impl fmt::Display for CastFormat {
     }
 }
 
+impl Default for Expr {
+    fn default() -> Self {
+        Expr::Value(ValueWithSpan {
+            value: Value::Null,
+            span: Span::empty(),
+        })
+    }
+}
+
+/// Returns `true` for Expr variants that create left-recursive or
+/// single-child chains which can cause deep recursion during drop.
+fn is_chain_variant(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::BinaryOp { .. } | Expr::UnaryOp { .. } | Expr::Nested(_)
+    )
+}
+
+/// Extracts the single deeply-nesting child from Expr variants that
+/// create left-recursive or single-child chains, replacing it with a
+/// cheap sentinel. Returns `None` if the child is not itself a chain
+/// variant (i.e., it will drop shallowly on its own).
+fn take_drop_child(expr: &mut Expr) -> Option<Expr> {
+    match expr {
+        Expr::BinaryOp { left, .. } if is_chain_variant(left.as_ref()) => {
+            Some(std::mem::replace(left.as_mut(), Expr::default()))
+        }
+        Expr::UnaryOp { expr, .. } | Expr::Nested(expr)
+            if is_chain_variant(expr.as_ref()) =>
+        {
+            Some(std::mem::replace(expr.as_mut(), Expr::default()))
+        }
+        _ => None,
+    }
+}
+
+impl Drop for Expr {
+    fn drop(&mut self) {
+        let mut current = take_drop_child(self);
+        while let Some(mut expr) = current {
+            current = take_drop_child(&mut expr);
+            // `expr` drops here, but its recursive child has been moved out
+            // (or it had no chain child), so the drop is shallow.
+        }
+    }
+}
+
 impl fmt::Display for Expr {
     #[cfg_attr(feature = "recursive-protection", recursive::recursive)]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -7617,12 +7664,14 @@ pub enum FunctionArgExpr {
 }
 
 impl From<Expr> for FunctionArgExpr {
-    fn from(wildcard_expr: Expr) -> Self {
-        match wildcard_expr {
-            Expr::QualifiedWildcard(prefix, _) => Self::QualifiedWildcard(prefix),
-            Expr::Wildcard(_) => Self::Wildcard,
-            expr => Self::Expr(expr),
+    fn from(mut wildcard_expr: Expr) -> Self {
+        if let Expr::QualifiedWildcard(ref mut prefix, _) = wildcard_expr {
+            return Self::QualifiedWildcard(std::mem::replace(prefix, ObjectName(vec![])));
         }
+        if matches!(&wildcard_expr, Expr::Wildcard(_)) {
+            return Self::Wildcard;
+        }
+        Self::Expr(wildcard_expr)
     }
 }
 

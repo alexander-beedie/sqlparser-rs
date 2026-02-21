@@ -1301,28 +1301,28 @@ fn parse_cast_varchar_max() {
 fn parse_convert() {
     let sql = "CONVERT(INT, 1, 2, 3, NULL)";
     let Expr::Convert {
-        is_try,
-        expr,
-        data_type,
-        charset,
-        target_before_value,
-        styles,
+        ref is_try,
+        ref expr,
+        ref data_type,
+        ref charset,
+        ref target_before_value,
+        ref styles,
     } = ms().verified_expr(sql)
     else {
         unreachable!()
     };
-    assert!(!is_try);
-    assert_eq!(Expr::value(number("1")), *expr);
-    assert_eq!(Some(DataType::Int(None)), data_type);
+    assert!(!*is_try);
+    assert_eq!(Expr::value(number("1")), **expr);
+    assert_eq!(Some(DataType::Int(None)), *data_type);
     assert!(charset.is_none());
-    assert!(target_before_value);
+    assert!(*target_before_value);
     assert_eq!(
         vec![
             Expr::value(number("2")),
             Expr::value(number("3")),
             Expr::Value((Value::Null).with_empty_span()),
         ],
-        styles
+        *styles
     );
 
     ms().verified_expr("CONVERT(VARCHAR(MAX), 'foo')");

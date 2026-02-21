@@ -459,13 +459,13 @@ fn parse_attach_database() {
             schema_name,
             database_file_name:
                 Expr::Value(ValueWithSpan {
-                    value: Value::SingleQuotedString(literal_name),
+                    value: Value::SingleQuotedString(ref literal_name),
                     span: _,
                 }),
             database: true,
         } => {
             assert_eq!(schema_name.value, "test");
-            assert_eq!(literal_name, "test.db");
+            assert_eq!(*literal_name, "test.db");
         }
         _ => unreachable!(),
     }
@@ -545,11 +545,11 @@ fn test_dollar_identifier_as_placeholder() {
     //
     // Reference: https://www.sqlite.org/lang_expr.html#varparam
     match sqlite().verified_expr("id = $id") {
-        Expr::BinaryOp { op, left, right } => {
-            assert_eq!(op, BinaryOperator::Eq);
-            assert_eq!(left, Box::new(Expr::Identifier(Ident::new("id"))));
+        Expr::BinaryOp { ref op, ref left, ref right } => {
+            assert_eq!(*op, BinaryOperator::Eq);
+            assert_eq!(*left, Box::new(Expr::Identifier(Ident::new("id"))));
             assert_eq!(
-                right,
+                *right,
                 Box::new(Expr::Value(
                     (Placeholder("$id".to_string())).with_empty_span()
                 ))
@@ -560,11 +560,11 @@ fn test_dollar_identifier_as_placeholder() {
 
     // $$ is a valid placeholder in SQLite
     match sqlite().verified_expr("id = $$") {
-        Expr::BinaryOp { op, left, right } => {
-            assert_eq!(op, BinaryOperator::Eq);
-            assert_eq!(left, Box::new(Expr::Identifier(Ident::new("id"))));
+        Expr::BinaryOp { ref op, ref left, ref right } => {
+            assert_eq!(*op, BinaryOperator::Eq);
+            assert_eq!(*left, Box::new(Expr::Identifier(Ident::new("id"))));
             assert_eq!(
-                right,
+                *right,
                 Box::new(Expr::Value(
                     (Placeholder("$$".to_string())).with_empty_span()
                 ))

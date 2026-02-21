@@ -1997,7 +1997,7 @@ impl<'a> Parser<'a> {
                     // `T.interval` is parsed as a compound identifier, not as an interval
                     // expression.
                     _ => {
-                        let expr = self.maybe_parse(|parser| {
+                        let mut expr = self.maybe_parse(|parser| {
                             let expr = parser
                                 .parse_subexpr(parser.dialect.prec_value(Precedence::Period))?;
                             match &expr {
@@ -2013,33 +2013,48 @@ impl<'a> Parser<'a> {
                             }
                         })?;
 
-                        match expr {
-                            // If we get back a compound field access or identifier,
-                            // we flatten the nested expression.
-                            // For example if the current root is `foo`
-                            // and we get back a compound identifier expression `bar.baz`
-                            // The full expression should be `foo.bar.baz` (i.e.
-                            // a root with an access chain with 2 entries) and not
-                            // `foo.(bar.baz)` (i.e. a root with an access chain with
-                            // 1 entry`).
-                            Some(Expr::CompoundFieldAccess { root, access_chain }) => {
-                                chain.push(AccessExpr::Dot(*root));
-                                chain.extend(access_chain);
+                        // If we get back a compound field access or identifier,
+                        // we flatten the nested expression.
+                        // For example if the current root is `foo`
+                        // and we get back a compound identifier expression `bar.baz`
+                        // The full expression should be `foo.bar.baz` (i.e.
+                        // a root with an access chain with 2 entries) and not
+                        // `foo.(bar.baz)` (i.e. a root with an access chain with
+                        // 1 entry`).
+                        if let Some(ref mut inner) = expr {
+                            match inner {
+                                Expr::CompoundFieldAccess {
+                                    ref mut root,
+                                    ref mut access_chain,
+                                } => {
+                                    let root =
+                                        std::mem::replace(root.as_mut(), Expr::default());
+                                    let access_chain = std::mem::take(access_chain);
+                                    chain.push(AccessExpr::Dot(root));
+                                    chain.extend(access_chain);
+                                }
+                                Expr::CompoundIdentifier(ref mut parts) => {
+                                    let parts = std::mem::take(parts);
+                                    chain.extend(
+                                        parts
+                                            .into_iter()
+                                            .map(Expr::Identifier)
+                                            .map(AccessExpr::Dot),
+                                    );
+                                }
+                                _ => {
+                                    let expr =
+                                        std::mem::replace(inner, Expr::default());
+                                    chain.push(AccessExpr::Dot(expr));
+                                }
                             }
-                            Some(Expr::CompoundIdentifier(parts)) => chain.extend(
-                                parts.into_iter().map(Expr::Identifier).map(AccessExpr::Dot),
-                            ),
-                            Some(expr) => {
-                                chain.push(AccessExpr::Dot(expr));
-                            }
+                        } else {
                             // If the expression is not a valid suffix, fall back to
                             // parsing as an identifier. This handles cases like `T.interval`
                             // where `interval` is a keyword but should be treated as an identifier.
-                            None => {
-                                chain.push(AccessExpr::Dot(Expr::Identifier(
-                                    self.parse_identifier()?,
-                                )));
-                            }
+                            chain.push(AccessExpr::Dot(Expr::Identifier(
+                                self.parse_identifier()?,
+                            )));
                         }
                     }
                 }
@@ -2111,7 +2126,10 @@ impl<'a> Parser<'a> {
                 .skip(1) // All except the Function
                 .all(|access| matches!(access, AccessExpr::Dot(Expr::Identifier(_))))
         {
-            let Some(AccessExpr::Dot(Expr::Function(mut func))) = access_chain.pop() else {
+            let Some(AccessExpr::Dot(mut func_expr)) = access_chain.pop() else {
+                return parser_err!("expected function expression", root.span().start);
+            };
+            let Expr::Function(ref mut func) = func_expr else {
                 return parser_err!("expected function expression", root.span().start);
             };
 
@@ -2121,16 +2139,18 @@ impl<'a> Parser<'a> {
                     AccessExpr::Dot(expr) => Some(expr),
                     _ => None,
                 }))
-                .flat_map(|expr| match expr {
-                    Expr::Identifier(ident) => Some(ident),
+                .flat_map(|mut expr| match &mut expr {
+                    Expr::Identifier(ident) => {
+                        Some(std::mem::replace(ident, Ident::new("")))
+                    }
                     _ => None,
                 })
                 .map(ObjectNamePart::Identifier)
-                .chain(func.name.0)
+                .chain(std::mem::take(&mut func.name.0))
                 .collect::<Vec<_>>();
             func.name = ObjectName(compound_func_name);
 
-            return Ok(Expr::Function(func));
+            return Ok(func_expr);
         }
 
         // Flatten qualified outer join expressions.
@@ -2143,7 +2163,10 @@ impl<'a> Parser<'a> {
                 Some(AccessExpr::Dot(Expr::OuterJoin(_)))
             )
         {
-            let Some(AccessExpr::Dot(Expr::OuterJoin(inner_expr))) = access_chain.pop() else {
+            let Some(AccessExpr::Dot(mut outer_expr)) = access_chain.pop() else {
+                return parser_err!("expected (+) expression", root.span().start);
+            };
+            let Expr::OuterJoin(ref mut inner_expr) = outer_expr else {
                 return parser_err!("expected (+) expression", root.span().start);
             };
 
@@ -2153,9 +2176,11 @@ impl<'a> Parser<'a> {
 
             let token_start = root.span().start;
             let mut idents = Self::exprs_to_idents(root, vec![])?;
-            match *inner_expr {
-                Expr::CompoundIdentifier(suffix) => idents.extend(suffix),
-                Expr::Identifier(suffix) => idents.push(suffix),
+            match &mut **inner_expr {
+                Expr::CompoundIdentifier(suffix) => idents.extend(std::mem::take(suffix)),
+                Expr::Identifier(suffix) => {
+                    idents.push(std::mem::replace(suffix, Ident::new("")))
+                }
                 _ => {
                     return parser_err!("column identifier before (+)", token_start);
                 }
@@ -2190,13 +2215,16 @@ impl<'a> Parser<'a> {
     }
 
     /// Convert a root and a list of fields to a list of identifiers.
-    fn exprs_to_idents(root: Expr, fields: Vec<AccessExpr>) -> Result<Vec<Ident>, ParserError> {
+    fn exprs_to_idents(
+        mut root: Expr,
+        fields: Vec<AccessExpr>,
+    ) -> Result<Vec<Ident>, ParserError> {
         let mut idents = vec![];
-        if let Expr::Identifier(root) = root {
-            idents.push(root);
-            for x in fields {
-                if let AccessExpr::Dot(Expr::Identifier(ident)) = x {
-                    idents.push(ident);
+        if let Expr::Identifier(ref mut root_ident) = root {
+            idents.push(std::mem::replace(root_ident, Ident::new("")));
+            for mut x in fields {
+                if let AccessExpr::Dot(Expr::Identifier(ref mut ident)) = x {
+                    idents.push(std::mem::replace(ident, Ident::new("")));
                 } else {
                     return parser_err!(
                         format!("Expected identifier, found: {}", x),
@@ -10954,12 +10982,14 @@ impl<'a> Parser<'a> {
     pub fn parse_call(&mut self) -> Result<Statement, ParserError> {
         let object_name = self.parse_object_name(false)?;
         if self.peek_token_ref().token == Token::LParen {
-            match self.parse_function(object_name)? {
-                Expr::Function(f) => Ok(Statement::Call(f)),
-                other => parser_err!(
-                    format!("Expected a simple procedure call but found: {other}"),
+            let func_expr = self.parse_function(object_name)?;
+            if let Expr::Function(ref f) = func_expr {
+                Ok(Statement::Call(f.clone()))
+            } else {
+                parser_err!(
+                    format!("Expected a simple procedure call but found: {func_expr}"),
                     self.peek_token_ref().span.start
-                ),
+                )
             }
         } else {
             Ok(Statement::Call(Function {
@@ -13688,7 +13718,8 @@ impl<'a> Parser<'a> {
                 Keyword::CALL => {
                     let function_name = self.parse_object_name(false)?;
                     let function_expr = self.parse_function(function_name)?;
-                    if let Expr::Function(function) = function_expr {
+                    if let Expr::Function(ref function) = function_expr {
+                        let function = function.clone();
                         let alias = self.parse_identifier_optional_alias()?;
                         pipe_operators.push(PipeOperator::Call { function, alias });
                     } else {
@@ -17760,57 +17791,76 @@ impl<'a> Parser<'a> {
             )
             .map(|keyword| Ident::new(format!("{keyword:?}")));
 
-        match self.parse_wildcard_expr()? {
-            Expr::QualifiedWildcard(prefix, token) => Ok(SelectItem::QualifiedWildcard(
-                SelectItemQualifiedWildcardKind::ObjectName(prefix),
+        let mut expr = self.parse_wildcard_expr()?;
+
+        if let Expr::QualifiedWildcard(ref mut qw_prefix, ref mut token) = expr {
+            let qw_prefix = std::mem::replace(qw_prefix, ObjectName(vec![]));
+            let token = std::mem::replace(token, AttachedToken::empty());
+            return Ok(SelectItem::QualifiedWildcard(
+                SelectItemQualifiedWildcardKind::ObjectName(qw_prefix),
                 self.parse_wildcard_additional_options(token.0)?,
-            )),
-            Expr::Wildcard(token) => Ok(SelectItem::Wildcard(
+            ));
+        }
+
+        if let Expr::Wildcard(ref mut token) = expr {
+            let token = std::mem::replace(token, AttachedToken::empty());
+            return Ok(SelectItem::Wildcard(
                 self.parse_wildcard_additional_options(token.0)?,
-            )),
-            Expr::Identifier(v) if v.value.to_lowercase() == "from" && v.quote_style.is_none() => {
-                parser_err!(
+            ));
+        }
+
+        if let Expr::Identifier(ref v) = expr {
+            if v.value.to_lowercase() == "from" && v.quote_style.is_none() {
+                return parser_err!(
                     format!("Expected an expression, found: {}", v),
                     self.peek_token_ref().span.start
-                )
+                );
             }
-            Expr::BinaryOp {
-                left,
-                op: BinaryOperator::Eq,
-                right,
-            } if self.dialect.supports_eq_alias_assignment()
-                && matches!(left.as_ref(), Expr::Identifier(_)) =>
+        }
+
+        if let Expr::BinaryOp {
+            ref left,
+            op: BinaryOperator::Eq,
+            ref mut right,
+        } = expr
+        {
+            if self.dialect.supports_eq_alias_assignment()
+                && matches!(left.as_ref(), Expr::Identifier(_))
             {
-                let Expr::Identifier(alias) = *left else {
+                let alias = if let Expr::Identifier(ref ident) = **left {
+                    ident.clone()
+                } else {
                     return parser_err!(
                         "BUG: expected identifier expression as alias",
                         self.peek_token_ref().span.start
                     );
                 };
-                Ok(SelectItem::ExprWithAlias {
-                    expr: *right,
+                let right_expr = std::mem::replace(right.as_mut(), Expr::default());
+                return Ok(SelectItem::ExprWithAlias {
+                    expr: right_expr,
                     alias,
-                })
+                });
             }
-            expr if self.dialect.supports_select_expr_star()
-                && self.consume_tokens(&[Token::Period, Token::Mul]) =>
-            {
-                let wildcard_token = self.get_previous_token().clone();
-                Ok(SelectItem::QualifiedWildcard(
-                    SelectItemQualifiedWildcardKind::Expr(expr),
-                    self.parse_wildcard_additional_options(wildcard_token)?,
-                ))
-            }
-            expr => self
-                .maybe_parse_select_item_alias()
-                .map(|alias| match alias {
-                    Some(alias) => SelectItem::ExprWithAlias {
-                        expr: maybe_prefixed_expr(expr, prefix),
-                        alias,
-                    },
-                    None => SelectItem::UnnamedExpr(maybe_prefixed_expr(expr, prefix)),
-                }),
         }
+
+        if self.dialect.supports_select_expr_star()
+            && self.consume_tokens(&[Token::Period, Token::Mul])
+        {
+            let wildcard_token = self.get_previous_token().clone();
+            return Ok(SelectItem::QualifiedWildcard(
+                SelectItemQualifiedWildcardKind::Expr(expr),
+                self.parse_wildcard_additional_options(wildcard_token)?,
+            ));
+        }
+
+        self.maybe_parse_select_item_alias()
+            .map(|alias| match alias {
+                Some(alias) => SelectItem::ExprWithAlias {
+                    expr: maybe_prefixed_expr(expr, prefix),
+                    alias,
+                },
+                None => SelectItem::UnnamedExpr(maybe_prefixed_expr(expr, prefix)),
+            })
     }
 
     /// Parse an [`WildcardAdditionalOptions`] information for wildcard select items.

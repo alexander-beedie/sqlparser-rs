@@ -2494,7 +2494,7 @@ fn parse_array_subscript() {
         ),
     ];
     for (sql, expect) in tests {
-        let Expr::CompoundFieldAccess { access_chain, .. } = pg_and_generic().verified_expr(sql)
+        let Expr::CompoundFieldAccess { ref access_chain, .. } = pg_and_generic().verified_expr(sql)
         else {
             panic!("expected subscript expr");
         };
@@ -3445,7 +3445,7 @@ fn test_json() {
 fn json_object_colon_syntax() {
     match pg().verified_expr("JSON_OBJECT('name' : 'value')") {
         Expr::Function(Function {
-            args: FunctionArguments::List(FunctionArgumentList { args, .. }),
+            args: FunctionArguments::List(FunctionArgumentList { ref args, .. }),
             ..
         }) => {
             assert!(
@@ -3459,7 +3459,7 @@ fn json_object_colon_syntax() {
                 "Invalid function argument: {args:?}"
             );
         }
-        other => panic!(
+        ref other => panic!(
             "Expected: JSON_OBJECT('name' : 'value') to be parsed as a function, but got {other:?}"
         ),
     }
@@ -3468,13 +3468,13 @@ fn json_object_colon_syntax() {
 #[test]
 fn json_object_value_syntax() {
     match pg().verified_expr("JSON_OBJECT('name' VALUE 'value')") {
-        Expr::Function(Function { args: FunctionArguments::List(FunctionArgumentList { args, .. }), .. }) => {
+        Expr::Function(Function { args: FunctionArguments::List(FunctionArgumentList { ref args, .. }), .. }) => {
             assert!(matches!(
                 &args[..],
                 &[FunctionArg::ExprNamed { operator: FunctionArgOperator::Value, .. }]
             ), "Invalid function argument: {args:?}");
         }
-        other => panic!("Expected: JSON_OBJECT('name' VALUE 'value') to be parsed as a function, but got {other:?}"),
+        ref other => panic!("Expected: JSON_OBJECT('name' VALUE 'value') to be parsed as a function, but got {other:?}"),
     }
 }
 
@@ -3484,17 +3484,17 @@ fn parse_json_object() {
     let expr = pg().verified_expr(sql);
     assert!(
         matches!(
-            expr.clone(),
+            &expr,
             Expr::Function(Function {
                 name: ObjectName(parts),
                 args: FunctionArguments::List(FunctionArgumentList { args, clauses, .. }),
                 ..
-            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
+            }) if parts == &vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
                 && matches!(
                     &args[..],
                     &[FunctionArg::ExprNamed { operator: FunctionArgOperator::Value, .. }]
                 )
-                && clauses == vec![FunctionArgumentClause::JsonNullClause(JsonNullClause::NullOnNull)]
+                && clauses == &vec![FunctionArgumentClause::JsonNullClause(JsonNullClause::NullOnNull)]
         ),
         "Failed to parse JSON_OBJECT with expected structure, got: {expr:?}"
     );
@@ -3503,17 +3503,17 @@ fn parse_json_object() {
     let expr = pg().verified_expr(sql);
     assert!(
         matches!(
-            expr.clone(),
+            &expr,
             Expr::Function(Function {
                 name: ObjectName(parts),
                 args: FunctionArguments::List(FunctionArgumentList { args, clauses, .. }),
                 ..
-            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
+            }) if parts == &vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
                 && matches!(
                     &args[..],
                     &[FunctionArg::ExprNamed { operator: FunctionArgOperator::Value, .. }]
                 )
-                && clauses == vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB })]
+                && clauses == &vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB })]
         ),
         "Failed to parse JSON_OBJECT with expected structure, got: {expr:?}"
     );
@@ -3522,14 +3522,14 @@ fn parse_json_object() {
     let expr = pg().verified_expr(sql);
     assert!(
         matches!(
-            expr.clone(),
+            &expr,
             Expr::Function(Function {
                 name: ObjectName(parts),
                 args: FunctionArguments::List(FunctionArgumentList { args, clauses, .. }),
                 ..
-            }) if parts == vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
+            }) if parts == &vec![ObjectNamePart::Identifier(Ident::new("JSON_OBJECT"))]
                 && args.is_empty()
-                && clauses == vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB })]
+                && clauses == &vec![FunctionArgumentClause::JsonReturningClause(JsonReturningClause { data_type: DataType::JSONB })]
         ),
         "Failed to parse JSON_OBJECT with expected structure, got: {expr:?}"
     );
@@ -5369,7 +5369,7 @@ fn parse_create_table_with_partition_by() {
                 create_table.columns
             );
             match *create_table.partition_by.unwrap() {
-                Expr::Function(f) => {
+                Expr::Function(ref f) => {
                     assert_eq!("RANGE", f.name.to_string());
                     assert_eq!(
                         FunctionArguments::List(FunctionArgumentList {
@@ -5834,10 +5834,10 @@ fn test_table_unnest_with_ordinality() {
 fn test_escaped_string_literal() {
     match pg().verified_expr(r#"E'\n'"#) {
         Expr::Value(ValueWithSpan {
-            value: Value::EscapedStringLiteral(s),
+            value: Value::EscapedStringLiteral(ref s),
             span: _,
         }) => {
-            assert_eq!("\n", s);
+            assert_eq!("\n", *s);
         }
         _ => unreachable!(),
     }
@@ -6462,10 +6462,10 @@ fn test_unicode_string_literal() {
     for (input, expected) in pairs {
         match pg_and_generic().verified_expr(input) {
             Expr::Value(ValueWithSpan {
-                value: Value::UnicodeStringLiteral(s),
+                value: Value::UnicodeStringLiteral(ref s),
                 span: _,
             }) => {
-                assert_eq!(expected, s);
+                assert_eq!(expected, *s);
             }
             _ => unreachable!(),
         }

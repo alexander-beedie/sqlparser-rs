@@ -789,8 +789,8 @@ fn parse_create_table_with_primary_key() {
                 _ => panic!("unexpected primary key type"),
             }
             match order_by {
-                Some(OneOrManyWithParens::One(Expr::Function(order_by))) => {
-                    assert!(assert_function(&order_by, "tuple", "i"));
+                Some(OneOrManyWithParens::One(Expr::Function(ref order_by))) => {
+                    assert!(assert_function(order_by, "tuple", "i"));
                 }
                 _ => panic!("unexpected order by type"),
             };

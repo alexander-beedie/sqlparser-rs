@@ -4379,9 +4379,9 @@ fn parse_assert_message() {
         } => {
             match message {
                 Expr::Value(ValueWithSpan {
-                    value: Value::SingleQuotedString(s),
+                    value: Value::SingleQuotedString(ref s),
                     span: _,
-                }) => assert_eq!(s, "No rows in my_table"),
+                }) => assert_eq!(*s, "No rows in my_table"),
                 _ => unreachable!(),
             };
         }
@@ -6786,13 +6786,13 @@ fn parse_typed_strings() {
     );
 
     if let Expr::TypedString(TypedString {
-        data_type,
-        value,
+        ref data_type,
+        ref value,
         uses_odbc_syntax: false,
     }) = expr
     {
-        assert_eq!(DataType::JSON, data_type);
-        assert_eq!(r#"{"foo":"bar"}"#, value.into_string().unwrap());
+        assert_eq!(DataType::JSON, *data_type);
+        assert_eq!(r#"{"foo":"bar"}"#, value.clone().into_string().unwrap());
     }
 }
 
@@ -14589,8 +14589,8 @@ fn parse_method_expr() {
     let expr =
         verified_expr("LEFT('abc', 1).value('.', 'NVARCHAR(MAX)').value('.', 'NVARCHAR(MAX)')");
     match expr {
-        Expr::CompoundFieldAccess { root, access_chain } => {
-            assert!(matches!(*root, Expr::Function(_)));
+        Expr::CompoundFieldAccess { ref root, ref access_chain } => {
+            assert!(matches!(**root, Expr::Function(_)));
             assert!(matches!(
                 access_chain[..],
                 [
@@ -14606,8 +14606,8 @@ fn parse_method_expr() {
         "(SELECT ',' + name FROM sys.objects FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)')",
     );
     match expr {
-        Expr::CompoundFieldAccess { root, access_chain } => {
-            assert!(matches!(*root, Expr::Subquery(_)));
+        Expr::CompoundFieldAccess { ref root, ref access_chain } => {
+            assert!(matches!(**root, Expr::Subquery(_)));
             assert!(matches!(
                 access_chain[..],
                 [AccessExpr::Dot(Expr::Function(_))]
@@ -14617,8 +14617,8 @@ fn parse_method_expr() {
     }
     let expr = verified_expr("CAST(column AS XML).value('.', 'NVARCHAR(MAX)')");
     match expr {
-        Expr::CompoundFieldAccess { root, access_chain } => {
-            assert!(matches!(*root, Expr::Cast { .. }));
+        Expr::CompoundFieldAccess { ref root, ref access_chain } => {
+            assert!(matches!(**root, Expr::Cast { .. }));
             assert!(matches!(
                 access_chain[..],
                 [AccessExpr::Dot(Expr::Function(_))]
@@ -14634,8 +14634,8 @@ fn parse_method_expr() {
         "CONVERT(XML, '<Book>abc</Book>').value('.', 'NVARCHAR(MAX)').value('.', 'NVARCHAR(MAX)')",
     );
     match expr {
-        Expr::CompoundFieldAccess { root, access_chain } => {
-            assert!(matches!(*root, Expr::Convert { .. }));
+        Expr::CompoundFieldAccess { ref root, ref access_chain } => {
+            assert!(matches!(**root, Expr::Convert { .. }));
             assert!(matches!(
                 access_chain[..],
                 [
@@ -17645,7 +17645,7 @@ fn test_parse_default_with_collate_column_option() {
         let default_option = column.options.pop().unwrap();
         if let ColumnOptionDef {
             name: None,
-            option: ColumnOption::Default(Expr::Value(value)),
+            option: ColumnOption::Default(Expr::Value(ref value)),
         } = default_option
         {
             assert_eq!(value.to_string(), "'foo'");

@@ -834,14 +834,14 @@ fn parse_prefix_key_part() {
     ] {
         match index_column(mysql_and_generic().verified_stmt(sql)) {
             Expr::Function(Function {
-                name,
-                args: FunctionArguments::List(FunctionArgumentList { args, .. }),
+                ref name,
+                args: FunctionArguments::List(FunctionArgumentList { ref args, .. }),
                 ..
             }) => {
                 assert_eq!(name.to_string(), "textcol");
-                assert_eq!(args, expected);
+                assert_eq!(*args, expected);
             }
-            expr => panic!("unexpected expression {expr} for {sql}"),
+            ref expr => panic!("unexpected expression {expr} for {sql}"),
         }
     }
 }
@@ -4173,19 +4173,19 @@ fn parse_match_against_with_alias() {
         Statement::Query(query) => match *query.body {
             SetExpr::Select(select) => match select.selection {
                 Some(Expr::MatchAgainst {
-                    columns,
-                    match_value,
-                    opt_search_modifier,
+                    ref columns,
+                    ref match_value,
+                    ref opt_search_modifier,
                 }) => {
                     assert_eq!(
-                        columns,
+                        *columns,
                         vec![ObjectName::from(vec![
                             Ident::new("tbl"),
                             Ident::new("ReferenceID")
                         ])]
                     );
-                    assert_eq!(match_value, Value::SingleQuotedString("AAA".to_owned()));
-                    assert_eq!(opt_search_modifier, Some(SearchModifier::InBooleanMode));
+                    assert_eq!(*match_value, Value::SingleQuotedString("AAA".to_owned()));
+                    assert_eq!(*opt_search_modifier, Some(SearchModifier::InBooleanMode));
                 }
                 _ => unreachable!(),
             },
