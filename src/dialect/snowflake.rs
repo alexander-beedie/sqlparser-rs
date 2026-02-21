@@ -754,7 +754,7 @@ fn parse_alter_external_table(parser: &mut Parser) -> Result<Statement, ParserEr
         // Optional subpath for refreshing specific partitions
         let subpath = match parser.peek_token().token {
             Token::SingleQuotedString(s) => {
-                parser.next_token();
+                parser.advance_token();
                 Some(s)
             }
             _ => None,
@@ -1155,14 +1155,14 @@ pub fn parse_create_database(
 pub fn parse_storage_serialization_policy(
     parser: &mut Parser,
 ) -> Result<StorageSerializationPolicy, ParserError> {
-    let next_token = parser.next_token();
-    match &next_token.token {
-        Token::Word(w) => match w.keyword {
-            Keyword::COMPATIBLE => Ok(StorageSerializationPolicy::Compatible),
-            Keyword::OPTIMIZED => Ok(StorageSerializationPolicy::Optimized),
-            _ => parser.expected("storage_serialization_policy", next_token),
-        },
-        _ => parser.expected("storage_serialization_policy", next_token),
+    let keyword = match &parser.next_token_ref().token {
+        Token::Word(w) => w.keyword,
+        _ => Keyword::NoKeyword,
+    };
+    match keyword {
+        Keyword::COMPATIBLE => Ok(StorageSerializationPolicy::Compatible),
+        Keyword::OPTIMIZED => Ok(StorageSerializationPolicy::Optimized),
+        _ => parser.expected_at("storage_serialization_policy", parser.get_current_index()),
     }
 }
 
@@ -1258,22 +1258,19 @@ pub fn parse_stage_name_identifier(parser: &mut Parser) -> Result<Ident, ParserE
 /// Parses a Snowflake stage name, which may start with `@` for internal stages.
 /// Examples: `@mystage`, `@namespace.stage`, `schema.table`
 pub fn parse_snowflake_stage_name(parser: &mut Parser) -> Result<ObjectName, ParserError> {
-    match parser.next_token().token {
-        Token::AtSign => {
-            parser.prev_token();
-            let mut idents = vec![];
-            loop {
-                idents.push(parse_stage_name_identifier(parser)?);
-                if !parser.consume_token(&Token::Period) {
-                    break;
-                }
+    let is_at_sign = parser.next_token_ref().token == Token::AtSign;
+    parser.prev_token();
+    if is_at_sign {
+        let mut idents = vec![];
+        loop {
+            idents.push(parse_stage_name_identifier(parser)?);
+            if !parser.consume_token(&Token::Period) {
+                break;
             }
-            Ok(ObjectName::from(idents))
         }
-        _ => {
-            parser.prev_token();
-            Ok(parser.parse_object_name(false)?)
-        }
+        Ok(ObjectName::from(idents))
+    } else {
+        Ok(parser.parse_object_name(false)?)
     }
 }
 
@@ -1381,7 +1378,7 @@ pub fn parse_copy_into(parser: &mut Parser) -> Result<Statement, ParserError> {
                     Token::SingleQuotedString(s) => files.push(s),
                     _ => parser.expected("file token", next_token)?,
                 };
-                if parser.next_token().token.eq(&Token::Comma) {
+                if parser.next_token_ref().token == Token::Comma {
                     continue_loop = true;
                 } else {
                     parser.prev_token(); // not a comma, need to go back
@@ -1399,7 +1396,7 @@ pub fn parse_copy_into(parser: &mut Parser) -> Result<Statement, ParserError> {
         // VALIDATION MODE
         } else if parser.parse_keyword(Keyword::VALIDATION_MODE) {
             parser.expect_token(&Token::Eq)?;
-            validation_mode = Some(parser.next_token().token.to_string());
+            validation_mode = Some(parser.next_token_ref().to_string());
         // COPY OPTIONS
         } else if parser.parse_keyword(Keyword::COPY_OPTIONS) {
             parser.expect_token(&Token::Eq)?;
@@ -1557,7 +1554,7 @@ fn parse_stage_params(parser: &mut Parser) -> Result<StageParamsObject, ParserEr
     // STORAGE INTEGRATION
     if parser.parse_keyword(Keyword::STORAGE_INTEGRATION) {
         parser.expect_token(&Token::Eq)?;
-        storage_integration = Some(parser.next_token().token.to_string());
+        storage_integration = Some(parser.next_token_ref().to_string());
     }
 
     // ENDPOINT
