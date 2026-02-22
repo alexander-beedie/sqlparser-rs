@@ -17406,6 +17406,7 @@ SELECT * FROM tbl2
         trailing_commas: false,
         unescape: true,
         require_semicolon_stmt_delimiter: false,
+        preserve_whitespace: false,
     });
     let stmts = dialects.parse_sql_statements(sql).unwrap();
     assert_eq!(stmts.len(), 2);
@@ -18562,4 +18563,118 @@ fn parse_array_subscript() {
 
     dialects.verified_stmt("SELECT arr[1][2]");
     dialects.verified_stmt("SELECT arr[:][:]");
+}
+
+#[test]
+fn test_skip_whitespace_token_count() {
+    let dialect = GenericDialect {};
+
+    // With whitespace preserved (skip_whitespace = false)
+    let tokens_with_ws = Tokenizer::new(&dialect, "SELECT 1")
+        .with_skip_whitespace(false)
+        .tokenize_with_location()
+        .unwrap();
+    assert_eq!(tokens_with_ws.len(), 3); // SELECT, Space, 1
+
+    // With whitespace stripped (skip_whitespace = true)
+    let tokens_no_ws = Tokenizer::new(&dialect, "SELECT 1")
+        .with_skip_whitespace(true)
+        .tokenize_with_location()
+        .unwrap();
+    assert_eq!(tokens_no_ws.len(), 2); // SELECT, 1
+}
+
+#[test]
+fn test_skip_whitespace_preserves_comments() {
+    let dialect = GenericDialect {};
+
+    let tokens = Tokenizer::new(&dialect, "SELECT /* comment */ 1 -- line comment")
+        .with_skip_whitespace(true)
+        .tokenize_with_location()
+        .unwrap();
+    // Comments should be preserved even with skip_whitespace enabled
+    let token_types: Vec<_> = tokens.iter().map(|t| &t.token).collect();
+    assert!(
+        token_types.iter().any(|t| matches!(
+            t,
+            sqlparser::tokenizer::Token::Whitespace(
+                sqlparser::tokenizer::Whitespace::MultiLineComment(_)
+            )
+        )),
+        "Multi-line comment should be preserved"
+    );
+    assert!(
+        token_types.iter().any(|t| matches!(
+            t,
+            sqlparser::tokenizer::Token::Whitespace(
+                sqlparser::tokenizer::Whitespace::SingleLineComment { .. }
+            )
+        )),
+        "Single-line comment should be preserved"
+    );
+    // But no Space/Newline tokens
+    assert!(
+        !token_types.iter().any(|t| matches!(
+            t,
+            sqlparser::tokenizer::Token::Whitespace(sqlparser::tokenizer::Whitespace::Space)
+        )),
+        "Space tokens should be stripped"
+    );
+}
+
+#[test]
+fn test_default_strips_whitespace() {
+    // Default ParserOptions has preserve_whitespace: false, which strips whitespace
+    let dialect = GenericDialect {};
+    let stmts = Parser::new(&dialect)
+        .try_with_sql("SELECT 1")
+        .unwrap()
+        .parse_statements()
+        .unwrap();
+    assert_eq!(stmts.len(), 1);
+}
+
+#[test]
+fn test_preserve_whitespace_option() {
+    let dialect = GenericDialect {};
+
+    // With preserve_whitespace: true, whitespace tokens should be in the token stream
+    let parser = Parser::new(&dialect)
+        .with_options(ParserOptions::new().with_preserve_whitespace(true))
+        .try_with_sql("SELECT 1")
+        .unwrap();
+
+    // Verify the parser has whitespace tokens
+    let tokens = parser.into_tokens();
+    assert!(
+        tokens.len() > 2,
+        "With preserve_whitespace, there should be whitespace tokens"
+    );
+}
+
+#[test]
+fn test_select_minus_not_hyphenated_with_stripped_whitespace() {
+    // Ensure `SELECT a - b` is NOT parsed as a hyphenated identifier
+    // even when whitespace tokens are stripped (the default).
+    let dialect = BigQueryDialect {};
+    let stmts = Parser::new(&dialect)
+        .try_with_sql("SELECT a - b FROM t")
+        .unwrap()
+        .parse_statements()
+        .unwrap();
+    assert_eq!(stmts.len(), 1);
+    match &stmts[0] {
+        Statement::Query(q) => {
+            let body = q.body.as_ref();
+            if let SetExpr::Select(select) = body {
+                match &select.projection[0] {
+                    SelectItem::UnnamedExpr(Expr::BinaryOp { op, .. }) => {
+                        assert_eq!(*op, BinaryOperator::Minus);
+                    }
+                    other => panic!("Expected BinaryOp with Minus, got {:?}", other),
+                }
+            }
+        }
+        _ => panic!("Expected SELECT query"),
+    }
 }

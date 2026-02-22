@@ -2420,6 +2420,7 @@ fn tsql() -> TestedDialects {
             trailing_commas: false,
             unescape: true,
             require_semicolon_stmt_delimiter: false,
+            preserve_whitespace: false,
         },
     )
 }

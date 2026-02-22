@@ -248,6 +248,16 @@ pub struct ParserOptions {
     /// Controls if the parser expects a semi-colon token
     /// between statements. Default is `true`.
     pub require_semicolon_stmt_delimiter: bool,
+    /// Controls whether whitespace tokens are preserved in the token stream.
+    ///
+    /// When false (default), simple whitespace tokens (Space, Tab, Newline) are
+    /// stripped during tokenization, reducing memory usage and improving parse
+    /// performance. Comments are always preserved.
+    ///
+    /// When true, all whitespace tokens are preserved. This is needed for
+    /// use cases like syntax highlighting or when using features that depend
+    /// on whitespace tokens (e.g. COPY TSV parsing with tab tokens).
+    pub preserve_whitespace: bool,
 }
 
 impl Default for ParserOptions {
@@ -256,6 +266,7 @@ impl Default for ParserOptions {
             trailing_commas: false,
             unescape: true,
             require_semicolon_stmt_delimiter: true,
+            preserve_whitespace: false,
         }
     }
 }
@@ -286,6 +297,14 @@ impl ParserOptions {
     /// [`Tokenizer::with_unescape`] for more details.
     pub fn with_unescape(mut self, unescape: bool) -> Self {
         self.unescape = unescape;
+        self
+    }
+
+    /// Set whether whitespace tokens are preserved. Defaults to false.
+    ///
+    /// See [`ParserOptions::preserve_whitespace`] for more details.
+    pub fn with_preserve_whitespace(mut self, preserve_whitespace: bool) -> Self {
+        self.preserve_whitespace = preserve_whitespace;
         self
     }
 }
@@ -472,6 +491,7 @@ impl<'a> Parser<'a> {
         debug!("Parsing sql '{sql}'...");
         let tokens = Tokenizer::new(self.dialect, sql)
             .with_unescape(self.options.unescape)
+            .with_skip_whitespace(!self.options.preserve_whitespace)
             .tokenize_with_location()?;
         Ok(self.with_tokens_with_locations(tokens))
     }
@@ -11510,7 +11530,13 @@ impl<'a> Parser<'a> {
                 // 2. Not calling self.next_token() to enforce `tok`
                 //    be followed immediately by a word/number, ie.
                 //    without any whitespace in between
+                let tok_end = span.end;
                 let next_token = self.next_token_no_skip().unwrap_or(&EOF_TOKEN).clone();
+                // Check span adjacency: if there's a gap between the sigil and
+                // the next token, whitespace was present (possibly stripped).
+                if next_token.span.start != tok_end {
+                    return self.expected("placeholder", next_token);
+                }
                 let ident = match next_token.token {
                     Token::Word(w) => Ok(w.into_ident(next_token.span)),
                     Token::Number(w, false) => Ok(Ident::with_span(next_token.span, w)),
@@ -12790,16 +12816,35 @@ impl<'a> Parser<'a> {
             Token::Word(w) => {
                 let quote_style_is_none = w.quote_style.is_none();
                 let mut requires_whitespace = false;
-                let mut ident = w.into_ident(self.next_token().span);
+                let word_token = self.next_token();
+                let mut ident = w.into_ident(word_token.span);
                 if quote_style_is_none {
+                    // Track the end position of the last consumed token for
+                    // span adjacency checks. This allows detecting whitespace
+                    // gaps even when whitespace tokens have been stripped.
+                    let mut last_end = word_token.span.end;
                     while matches!(self.peek_token_no_skip().token, Token::Minus) {
-                        self.next_token();
+                        // Use span adjacency to detect whitespace between the
+                        // previous token and the minus sign. If there's a gap,
+                        // the minus is not part of a hyphenated identifier
+                        // (e.g. `a - b` vs `a-b`).
+                        let minus_span = self.peek_token_no_skip().span;
+                        if minus_span.start != last_end {
+                            break;
+                        }
+                        self.next_token(); // consume the minus
                         ident.value.push('-');
 
                         let token = self
                             .next_token_no_skip()
                             .cloned()
                             .unwrap_or(TokenWithSpan::wrap(Token::EOF));
+                        // Check adjacency between minus and the next token
+                        if token.span.start != minus_span.end {
+                            return self
+                                .expected("continuation of hyphenated identifier", token);
+                        }
+                        let token_end = token.span.end;
                         requires_whitespace = match token.token {
                             Token::Word(next_word) if next_word.quote_style.is_none() => {
                                 ident.value.push_str(&next_word.value);
@@ -12834,16 +12879,27 @@ impl<'a> Parser<'a> {
                                 return self
                                     .expected("continuation of hyphenated identifier", token);
                             }
-                        }
+                        };
+                        last_end = token_end;
                     }
 
                     // If the last segment was a number, we must check that it's followed by whitespace,
                     // otherwise foo-123a will be parsed as `foo-123` with the alias `a`.
                     if requires_whitespace {
-                        let token = self.next_token();
-                        if !matches!(token.token, Token::EOF | Token::Whitespace(_)) {
-                            return self
-                                .expected("whitespace following hyphenated identifier", token);
+                        let next = self.peek_token_no_skip();
+                        match &next.token {
+                            Token::EOF => {}
+                            Token::Whitespace(_) => {}
+                            _ if next.span.start != last_end => {
+                                // Gap in spans indicates whitespace was present
+                            }
+                            _ => {
+                                let token = self.next_token();
+                                return self.expected(
+                                    "whitespace following hyphenated identifier",
+                                    token,
+                                );
+                            }
                         }
                     }
                 }

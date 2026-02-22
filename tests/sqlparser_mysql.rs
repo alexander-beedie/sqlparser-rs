@@ -1485,6 +1485,7 @@ fn parse_escaped_quote_identifiers_with_no_escape() {
                 trailing_commas: false,
                 unescape: false,
                 require_semicolon_stmt_delimiter: true,
+                preserve_whitespace: false,
             }
         )
         .verified_stmt(sql),

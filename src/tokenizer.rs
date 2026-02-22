@@ -854,6 +854,10 @@ pub struct Tokenizer<'a> {
     /// If true (the default), the tokenizer will un-escape literal
     /// SQL strings See [`Tokenizer::with_unescape`] for more details.
     unescape: bool,
+    /// If true, the tokenizer will skip simple whitespace tokens
+    /// (Space, Tab, Newline) and not include them in the output.
+    /// Comments are always preserved.
+    skip_whitespace: bool,
 }
 
 impl<'a> Tokenizer<'a> {
@@ -878,6 +882,7 @@ impl<'a> Tokenizer<'a> {
             dialect,
             query,
             unescape: true,
+            skip_whitespace: false,
         }
     }
 
@@ -913,6 +918,18 @@ impl<'a> Tokenizer<'a> {
     /// ```
     pub fn with_unescape(mut self, unescape: bool) -> Self {
         self.unescape = unescape;
+        self
+    }
+
+    /// Set whether to skip simple whitespace tokens (Space, Tab, Newline)
+    /// during tokenization.
+    ///
+    /// When true, the tokenizer will not include simple whitespace tokens
+    /// in the output. Comments (single-line and multi-line) are always preserved.
+    ///
+    /// When false (default), all whitespace tokens are included in the output.
+    pub fn with_skip_whitespace(mut self, skip_whitespace: bool) -> Self {
+        self.skip_whitespace = skip_whitespace;
         self
     }
 
@@ -953,6 +970,20 @@ impl<'a> Tokenizer<'a> {
 
         let mut location = state.location();
         while let Some(token) = self.next_token(&mut state, buf.last().map(|t| &t.token))? {
+            // Skip simple whitespace tokens when skip_whitespace is enabled.
+            // Comments are always preserved.
+            if self.skip_whitespace {
+                if matches!(
+                    &token,
+                    Token::Whitespace(
+                        Whitespace::Space | Whitespace::Tab | Whitespace::Newline
+                    )
+                ) {
+                    location = state.location();
+                    continue;
+                }
+            }
+
             let span = location.span_to(state.location());
 
             // Check if this is a multiline comment hint that should be expanded

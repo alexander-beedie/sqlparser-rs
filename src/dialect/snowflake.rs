@@ -39,6 +39,7 @@ use crate::ast::{
 use crate::dialect::{Dialect, Precedence};
 use crate::keywords::Keyword;
 use crate::parser::{IsOptional, Parser, ParserError};
+use crate::tokenizer::Location;
 use crate::tokenizer::Token;
 use crate::tokenizer::TokenWithSpan;
 #[cfg(not(feature = "std"))]
@@ -1226,7 +1227,18 @@ pub fn parse_create_stage(
 
 pub fn parse_stage_name_identifier(parser: &mut Parser) -> Result<Ident, ParserError> {
     let mut ident = String::new();
+    let mut last_end: Option<Location> = None;
     while let Some(next_token) = parser.next_token_no_skip() {
+        let token_span = next_token.span;
+        // If there is a gap between this token and the previous one,
+        // whitespace was present (possibly stripped during tokenization),
+        // so stop consuming tokens for this identifier.
+        if let Some(end) = last_end {
+            if token_span.start != end {
+                parser.prev_token();
+                break;
+            }
+        }
         match &next_token.token {
             Token::Whitespace(_) | Token::SemiColon => break,
             Token::Period => {
@@ -1247,6 +1259,7 @@ pub fn parse_stage_name_identifier(parser: &mut Parser) -> Result<Ident, ParserE
             Token::Word(w) => ident.push_str(&w.to_string()),
             _ => return parser.expected_ref("stage name identifier", parser.peek_token_ref()),
         }
+        last_end = Some(token_span.end);
     }
     Ok(Ident::new(ident))
 }
