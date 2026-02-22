@@ -75,18 +75,18 @@ impl Parser<'_> {
             };
 
             let using = if self.parse_keyword(Keyword::USING) {
-                self.expect_token(&Token::LParen)?;
+                self.expect_token_is(&Token::LParen)?;
                 let expr = self.parse_expr()?;
-                self.expect_token(&Token::RParen)?;
+                self.expect_token_is(&Token::RParen)?;
                 Some(expr)
             } else {
                 None
             };
 
             let with_check = if self.parse_keywords(&[Keyword::WITH, Keyword::CHECK]) {
-                self.expect_token(&Token::LParen)?;
+                self.expect_token_is(&Token::LParen)?;
                 let expr = self.parse_expr()?;
-                self.expect_token(&Token::RParen)?;
+                self.expect_token_is(&Token::RParen)?;
                 Some(expr)
             } else {
                 None
@@ -218,7 +218,7 @@ impl Parser<'_> {
         let add_mfa_method_otp =
             if self.parse_keywords(&[Keyword::ADD, Keyword::MFA, Keyword::METHOD, Keyword::OTP]) {
                 let count = if self.parse_keyword(Keyword::COUNT) {
-                    self.expect_token(&Token::Eq)?;
+                    self.expect_token_is(&Token::Eq)?;
                     Some(self.parse_value()?.into())
                 } else {
                     None
