@@ -1387,7 +1387,7 @@ impl<'a> Parser<'a> {
         debug!("parsing expr");
         let mut expr = self.parse_prefix()?;
 
-        expr = self.parse_compound_expr(expr, vec![])?;
+        expr = self.parse_compound_expr(expr, None)?;
 
         debug!("prefix: {expr:?}");
         loop {
@@ -1956,7 +1956,7 @@ impl<'a> Parser<'a> {
     pub fn parse_compound_expr(
         &mut self,
         root: Expr,
-        mut chain: Vec<AccessExpr>,
+        mut chain: Option<Vec<AccessExpr>>,
     ) -> Result<Expr, ParserError> {
         let mut ending_wildcard: Option<TokenWithSpan> = None;
         loop {
@@ -1982,14 +1982,14 @@ impl<'a> Parser<'a> {
                     Token::SingleQuotedString(s) => {
                         let expr =
                             Expr::Identifier(Ident::with_quote_and_span('\'', next_token.span, s));
-                        chain.push(AccessExpr::Dot(expr));
+                        chain.get_or_insert_with(Vec::new).push(AccessExpr::Dot(expr));
                         self.advance_token(); // The consumed string
                     }
                     Token::Placeholder(s) => {
                         // Snowflake uses $1, $2, etc. for positional column references
                         // in staged data queries like: SELECT t.$1 FROM @stage t
                         let expr = Expr::Identifier(Ident::with_span(next_token.span, s));
-                        chain.push(AccessExpr::Dot(expr));
+                        chain.get_or_insert_with(Vec::new).push(AccessExpr::Dot(expr));
                         self.advance_token(); // The consumed placeholder
                     }
                     // Fallback to parsing an arbitrary expression, but restrict to expression
@@ -2023,20 +2023,23 @@ impl<'a> Parser<'a> {
                             // `foo.(bar.baz)` (i.e. a root with an access chain with
                             // 1 entry`).
                             Some(Expr::CompoundFieldAccess { root, access_chain }) => {
-                                chain.push(AccessExpr::Dot(*root));
-                                chain.extend(access_chain);
+                                let c = chain.get_or_insert_with(Vec::new);
+                                c.push(AccessExpr::Dot(*root));
+                                c.extend(access_chain);
                             }
-                            Some(Expr::CompoundIdentifier(parts)) => chain.extend(
-                                parts.into_iter().map(Expr::Identifier).map(AccessExpr::Dot),
-                            ),
+                            Some(Expr::CompoundIdentifier(parts)) => {
+                                chain.get_or_insert_with(Vec::new).extend(
+                                    parts.into_iter().map(Expr::Identifier).map(AccessExpr::Dot),
+                                );
+                            }
                             Some(expr) => {
-                                chain.push(AccessExpr::Dot(expr));
+                                chain.get_or_insert_with(Vec::new).push(AccessExpr::Dot(expr));
                             }
                             // If the expression is not a valid suffix, fall back to
                             // parsing as an identifier. This handles cases like `T.interval`
                             // where `interval` is a keyword but should be treated as an identifier.
                             None => {
-                                chain.push(AccessExpr::Dot(Expr::Identifier(
+                                chain.get_or_insert_with(Vec::new).push(AccessExpr::Dot(Expr::Identifier(
                                     self.parse_identifier()?,
                                 )));
                             }
@@ -2046,12 +2049,13 @@ impl<'a> Parser<'a> {
             } else if !self.dialect.supports_partiql()
                 && self.peek_token_ref().token == Token::LBracket
             {
-                self.parse_multi_dim_subscript(&mut chain)?;
+                self.parse_multi_dim_subscript(chain.get_or_insert_with(Vec::new))?;
             } else {
                 break;
             }
         }
 
+        let chain = chain.unwrap_or_default();
         let tok_index = self.get_current_index();
         if let Some(wildcard_token) = ending_wildcard {
             if !Self::is_all_ident(&root, &chain) {
@@ -4898,7 +4902,7 @@ impl<'a> Parser<'a> {
         F: FnMut(&mut Parser<'a>) -> Result<T, ParserError>,
         R: Fn(&Keyword, &mut Parser) -> bool,
     {
-        let mut values = vec![];
+        let mut values = Vec::with_capacity(8);
         loop {
             values.push(f(self)?);
             if self.is_parse_comma_separated_end_with_trailing_commas(
@@ -4916,7 +4920,7 @@ impl<'a> Parser<'a> {
     where
         F: FnMut(&mut Parser<'a>) -> Result<T, ParserError>,
     {
-        let mut values = vec![];
+        let mut values = Vec::with_capacity(4);
         loop {
             values.push(f(self)?);
             if !self.consume_token(&Token::Period) {
@@ -4935,7 +4939,7 @@ impl<'a> Parser<'a> {
     where
         F: FnMut(&mut Parser<'a>) -> Result<T, ParserError>,
     {
-        let mut values = vec![];
+        let mut values = Vec::with_capacity(4);
         loop {
             values.push(f(self)?);
             if !self.parse_keyword(keyword) {
