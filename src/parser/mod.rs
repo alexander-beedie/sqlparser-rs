@@ -4106,13 +4106,13 @@ impl<'a> Parser<'a> {
             None
         } else {
             // parse expr until we hit a colon (or any token with lower precedence)
-            Some(self.parse_subexpr(self.dialect.prec_value(Precedence::Colon))?)
+            Some(Box::new(self.parse_subexpr(self.dialect.prec_value(Precedence::Colon))?))
         };
 
         // check for end
         if self.consume_token(&Token::RBracket) {
             if let Some(lower_bound) = lower_bound {
-                return Ok(Subscript::Index { index: lower_bound });
+                return Ok(Subscript::Index { index: *lower_bound });
             };
             return Ok(Subscript::Slice {
                 lower_bound,
@@ -4135,7 +4135,7 @@ impl<'a> Parser<'a> {
             });
         } else {
             // parse expr until we hit a colon (or any token with lower precedence)
-            Some(self.parse_subexpr(self.dialect.prec_value(Precedence::Colon))?)
+            Some(Box::new(self.parse_subexpr(self.dialect.prec_value(Precedence::Colon))?))
         };
 
         // check for end
@@ -4152,7 +4152,7 @@ impl<'a> Parser<'a> {
         let stride = if self.consume_token(&Token::RBracket) {
             None
         } else {
-            Some(self.parse_expr()?)
+            Some(Box::new(self.parse_expr()?))
         };
 
         if stride.is_some() {
@@ -14209,13 +14209,13 @@ impl<'a> Parser<'a> {
 
         let prewhere = if self.dialect.supports_prewhere() && self.parse_keyword(Keyword::PREWHERE)
         {
-            Some(self.parse_expr()?)
+            Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
 
         let selection = if self.parse_keyword(Keyword::WHERE) {
-            Some(self.parse_expr()?)
+            Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
@@ -14245,7 +14245,7 @@ impl<'a> Parser<'a> {
         };
 
         let having = if self.parse_keyword(Keyword::HAVING) {
-            Some(self.parse_expr()?)
+            Some(Box::new(self.parse_expr()?))
         } else {
             None
         };
@@ -14255,12 +14255,12 @@ impl<'a> Parser<'a> {
         {
             let named_windows = self.parse_comma_separated(Parser::parse_named_window)?;
             if self.parse_keyword(Keyword::QUALIFY) {
-                (named_windows, Some(self.parse_expr()?), true)
+                (named_windows, Some(Box::new(self.parse_expr()?)), true)
             } else {
                 (named_windows, None, true)
             }
         } else if self.parse_keyword(Keyword::QUALIFY) {
-            let qualify = Some(self.parse_expr()?);
+            let qualify = Some(Box::new(self.parse_expr()?));
             if self.parse_keyword(Keyword::WINDOW) {
                 (
                     self.parse_comma_separated(Parser::parse_named_window)?,
@@ -17539,7 +17539,7 @@ impl<'a> Parser<'a> {
                 let operator = p.parse_function_named_arg_operator()?;
                 let arg = p.parse_wildcard_expr()?.into();
                 Ok(FunctionArg::ExprNamed {
-                    name,
+                    name: Box::new(name),
                     arg,
                     operator,
                 })
@@ -17670,7 +17670,7 @@ impl<'a> Parser<'a> {
         }
 
         if self.parse_keyword(Keyword::LIMIT) {
-            clauses.push(FunctionArgumentClause::Limit(self.parse_expr()?));
+            clauses.push(FunctionArgumentClause::Limit(Box::new(self.parse_expr()?)));
         }
 
         if dialect_of!(self is GenericDialect | BigQueryDialect)
@@ -17763,10 +17763,10 @@ impl<'a> Parser<'a> {
         match self.parse_wildcard_expr()? {
             Expr::QualifiedWildcard(prefix, token) => Ok(SelectItem::QualifiedWildcard(
                 SelectItemQualifiedWildcardKind::ObjectName(prefix),
-                self.parse_wildcard_additional_options(token.0)?,
+                Box::new(self.parse_wildcard_additional_options(token.0)?),
             )),
             Expr::Wildcard(token) => Ok(SelectItem::Wildcard(
-                self.parse_wildcard_additional_options(token.0)?,
+                Box::new(self.parse_wildcard_additional_options(token.0)?),
             )),
             Expr::Identifier(v) if v.value.to_lowercase() == "from" && v.quote_style.is_none() => {
                 parser_err!(
@@ -17798,7 +17798,7 @@ impl<'a> Parser<'a> {
                 let wildcard_token = self.get_previous_token().clone();
                 Ok(SelectItem::QualifiedWildcard(
                     SelectItemQualifiedWildcardKind::Expr(expr),
-                    self.parse_wildcard_additional_options(wildcard_token)?,
+                    Box::new(self.parse_wildcard_additional_options(wildcard_token)?),
                 ))
             }
             expr => self
@@ -18041,7 +18041,7 @@ impl<'a> Parser<'a> {
         let with_fill = if self.dialect.supports_with_fill()
             && self.parse_keywords(&[Keyword::WITH, Keyword::FILL])
         {
-            Some(self.parse_with_fill()?)
+            Some(Box::new(self.parse_with_fill()?))
         } else {
             None
         };

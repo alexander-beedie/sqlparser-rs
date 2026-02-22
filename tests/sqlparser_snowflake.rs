@@ -1473,32 +1473,32 @@ fn snowflake_and_generic() -> TestedDialects {
 #[test]
 fn test_select_wildcard_with_exclude() {
     let select = snowflake_and_generic().verified_only_select("SELECT * EXCLUDE (col_a) FROM data");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_exclude: Some(ExcludeSelectItem::Multiple(vec![Ident::new("col_a")])),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     let select = snowflake_and_generic()
         .verified_only_select("SELECT name.* EXCLUDE department_id FROM employee_table");
     let expected = SelectItem::QualifiedWildcard(
         SelectItemQualifiedWildcardKind::ObjectName(ObjectName::from(vec![Ident::new("name")])),
-        WildcardAdditionalOptions {
+        Box::new(WildcardAdditionalOptions {
             opt_exclude: Some(ExcludeSelectItem::Single(Ident::new("department_id"))),
             ..Default::default()
         },
-    );
+    ));
     assert_eq!(expected, select.projection[0]);
 
     let select = snowflake_and_generic()
         .verified_only_select("SELECT * EXCLUDE (department_id, employee_id) FROM employee_table");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_exclude: Some(ExcludeSelectItem::Multiple(vec![
             Ident::new("department_id"),
             Ident::new("employee_id"),
         ])),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 }
 
@@ -1506,13 +1506,13 @@ fn test_select_wildcard_with_exclude() {
 fn test_select_wildcard_with_rename() {
     let select =
         snowflake_and_generic().verified_only_select("SELECT * RENAME col_a AS col_b FROM data");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_rename: Some(RenameSelectItem::Single(IdentWithAlias {
             ident: Ident::new("col_a"),
             alias: Ident::new("col_b"),
         })),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     let select = snowflake_and_generic().verified_only_select(
@@ -1520,7 +1520,7 @@ fn test_select_wildcard_with_rename() {
     );
     let expected = SelectItem::QualifiedWildcard(
         SelectItemQualifiedWildcardKind::ObjectName(ObjectName::from(vec![Ident::new("name")])),
-        WildcardAdditionalOptions {
+        Box::new(WildcardAdditionalOptions {
             opt_rename: Some(RenameSelectItem::Multiple(vec![
                 IdentWithAlias {
                     ident: Ident::new("department_id"),
@@ -1533,7 +1533,7 @@ fn test_select_wildcard_with_rename() {
             ])),
             ..Default::default()
         },
-    );
+    ));
     assert_eq!(expected, select.projection[0]);
 }
 
@@ -1542,7 +1542,7 @@ fn test_select_wildcard_with_replace_and_rename() {
     let select = snowflake_and_generic().verified_only_select(
         "SELECT * REPLACE (col_z || col_z AS col_z) RENAME (col_z AS col_zz) FROM data",
     );
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_replace: Some(ReplaceSelectItem {
             items: vec![Box::new(ReplaceSelectElement {
                 expr: Expr::BinaryOp {
@@ -1559,7 +1559,7 @@ fn test_select_wildcard_with_replace_and_rename() {
             alias: Ident::new("col_zz"),
         }])),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     // rename cannot precede replace
@@ -1579,14 +1579,14 @@ fn test_select_wildcard_with_replace_and_rename() {
 fn test_select_wildcard_with_exclude_and_rename() {
     let select = snowflake_and_generic()
         .verified_only_select("SELECT * EXCLUDE col_z RENAME col_a AS col_b FROM data");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_exclude: Some(ExcludeSelectItem::Single(Ident::new("col_z"))),
         opt_rename: Some(RenameSelectItem::Single(IdentWithAlias {
             ident: Ident::new("col_a"),
             alias: Ident::new("col_b"),
         })),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     // rename cannot precede exclude
@@ -2775,7 +2775,7 @@ fn parse_comma_outer_join() {
         snowflake().verified_only_select("SELECT t1.c1, t2.c2 FROM t1, t2 WHERE t1.c1 = t2.c2 (+)");
     assert_eq!(
         case1.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::CompoundIdentifier(vec![
                 Ident::new("t1"),
                 Ident::new("c1")
@@ -2785,7 +2785,7 @@ fn parse_comma_outer_join() {
                 Ident::new("t2"),
                 Ident::new("c2")
             ]))))
-        })
+        }))
     );
 
     // regular identifiers
@@ -2793,13 +2793,13 @@ fn parse_comma_outer_join() {
         snowflake().verified_only_select("SELECT t1.c1, t2.c2 FROM t1, t2 WHERE c1 = c2 (+)");
     assert_eq!(
         case2.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("c1"))),
             op: BinaryOperator::Eq,
             right: Box::new(Expr::OuterJoin(Box::new(Expr::Identifier(Ident::new(
                 "c2"
             )))))
-        })
+        }))
     );
 
     // ensure we can still parse function calls with a unary plus arg
@@ -2807,7 +2807,7 @@ fn parse_comma_outer_join() {
         snowflake().verified_only_select("SELECT t1.c1, t2.c2 FROM t1, t2 WHERE c1 = myudf(+42)");
     assert_eq!(
         case3.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("c1"))),
             op: BinaryOperator::Eq,
             right: Box::new(call(
@@ -2817,7 +2817,7 @@ fn parse_comma_outer_join() {
                     expr: Box::new(Expr::value(number("42")))
                 }]
             )),
-        })
+        }))
     );
 
     // permissive with whitespace
@@ -2835,12 +2835,12 @@ fn test_sf_trailing_commas() {
 #[test]
 fn test_select_wildcard_with_ilike() {
     let select = snowflake_and_generic().verified_only_select(r#"SELECT * ILIKE '%id%' FROM tbl"#);
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_ilike: Some(IlikeSelectItem {
             pattern: "%id%".to_owned(),
         }),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 }
 

@@ -477,9 +477,9 @@ pub struct Select {
     /// and it can be used together with WHERE selection.
     ///
     /// [ClickHouse](https://clickhouse.com/docs/en/sql-reference/statements/select/prewhere)
-    pub prewhere: Option<Expr>,
+    pub prewhere: Option<Box<Expr>>,
     /// WHERE
-    pub selection: Option<Expr>,
+    pub selection: Option<Box<Expr>>,
     /// [START WITH ..] CONNECT BY ..
     pub connect_by: Vec<ConnectByKind>,
     /// GROUP BY
@@ -491,11 +491,11 @@ pub struct Select {
     /// SORT BY (Hive)
     pub sort_by: Vec<OrderByExpr>,
     /// HAVING
-    pub having: Option<Expr>,
+    pub having: Option<Box<Expr>>,
     /// WINDOW AS
     pub named_window: Vec<NamedWindowDefinition>,
     /// QUALIFY (Snowflake)
-    pub qualify: Option<Expr>,
+    pub qualify: Option<Box<Expr>>,
     /// The positioning of QUALIFY and WINDOW clauses differ between dialects.
     /// e.g. BigQuery requires that WINDOW comes after QUALIFY, while DUCKDB accepts
     /// WINDOW before QUALIFY.
@@ -873,9 +873,9 @@ pub enum SelectItem {
     },
     /// An expression, followed by a wildcard expansion.
     /// e.g. `alias.*`, `STRUCT<STRING>('foo').*`
-    QualifiedWildcard(SelectItemQualifiedWildcardKind, WildcardAdditionalOptions),
+    QualifiedWildcard(SelectItemQualifiedWildcardKind, Box<WildcardAdditionalOptions>),
     /// An unqualified `*`
-    Wildcard(WildcardAdditionalOptions),
+    Wildcard(Box<WildcardAdditionalOptions>),
 }
 
 impl fmt::Display for SelectItemQualifiedWildcardKind {
@@ -2855,7 +2855,7 @@ pub struct OrderByExpr {
     /// Ordering options such as `ASC`/`DESC` and `NULLS` behavior.
     pub options: OrderByOptions,
     /// Optional `WITH FILL` clause (ClickHouse extension) which specifies how to fill gaps.
-    pub with_fill: Option<WithFill>,
+    pub with_fill: Option<Box<WithFill>>,
 }
 
 impl From<Ident> for OrderByExpr {

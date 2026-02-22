@@ -70,7 +70,7 @@ fn parse_map_access_expr() {
             }],
             lateral_views: vec![],
             prewhere: None,
-            selection: Some(BinaryOp {
+            selection: Some(Box::new(BinaryOp {
                 left: Box::new(BinaryOp {
                     left: Box::new(Identifier(Ident::new("id"))),
                     op: BinaryOperator::Eq,
@@ -93,7 +93,7 @@ fn parse_map_access_expr() {
                     op: BinaryOperator::NotEq,
                     right: Box::new(Expr::value(Value::SingleQuotedString("foo".to_string()))),
                 }),
-            }),
+            })),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             cluster_by: vec![],
             distribute_by: vec![],
@@ -1162,11 +1162,11 @@ fn parse_select_order_by_with_fill_interpolate() {
                         asc: Some(true),
                         nulls_first: Some(true),
                     },
-                    with_fill: Some(WithFill {
+                    with_fill: Some(Box::new(WithFill {
                         from: Some(Expr::value(number("10"))),
                         to: Some(Expr::value(number("20"))),
                         step: Some(Expr::value(number("2"))),
-                    }),
+                    })),
                 },
                 OrderByExpr {
                     expr: Expr::Identifier(Ident::new("lname")),
@@ -1174,11 +1174,11 @@ fn parse_select_order_by_with_fill_interpolate() {
                         asc: Some(false),
                         nulls_first: Some(false),
                     },
-                    with_fill: Some(WithFill {
+                    with_fill: Some(Box::new(WithFill {
                         from: Some(Expr::value(number("30"))),
                         to: Some(Expr::value(number("40"))),
                         step: Some(Expr::value(number("3"))),
-                    }),
+                    })),
                 },
             ]),
             interpolate: Some(Interpolate {
@@ -1248,7 +1248,7 @@ fn parse_with_fill() {
         })
         .as_ref(),
         match select.order_by.expect("ORDER BY expected").kind {
-            OrderByKind::Expressions(ref exprs) => exprs[0].with_fill.as_ref(),
+            OrderByKind::Expressions(ref exprs) => exprs[0].with_fill.as_deref(),
             _ => None,
         }
     );
@@ -1346,7 +1346,7 @@ fn parse_interpolate_with_empty_body() {
 fn test_prewhere() {
     match clickhouse_and_generic().verified_stmt("SELECT * FROM t PREWHERE x = 1 WHERE y = 2") {
         Statement::Query(query) => {
-            let prewhere = query.body.as_select().unwrap().prewhere.as_ref();
+            let prewhere = query.body.as_select().unwrap().prewhere.as_deref();
             assert_eq!(
                 prewhere,
                 Some(&BinaryOp {
@@ -1357,7 +1357,7 @@ fn test_prewhere() {
                     )),
                 })
             );
-            let selection = query.as_ref().body.as_select().unwrap().selection.as_ref();
+            let selection = query.as_ref().body.as_select().unwrap().selection.as_deref();
             assert_eq!(
                 selection,
                 Some(&BinaryOp {
@@ -1374,7 +1374,7 @@ fn test_prewhere() {
 
     match clickhouse_and_generic().verified_stmt("SELECT * FROM t PREWHERE x = 1 AND y = 2") {
         Statement::Query(query) => {
-            let prewhere = query.body.as_select().unwrap().prewhere.as_ref();
+            let prewhere = query.body.as_select().unwrap().prewhere.as_deref();
             assert_eq!(
                 prewhere,
                 Some(&BinaryOp {

@@ -1362,11 +1362,11 @@ pub enum Subscript {
     /// ```
     Slice {
         /// Optional lower bound for the slice (inclusive).
-        lower_bound: Option<Expr>,
+        lower_bound: Option<Box<Expr>>,
         /// Optional upper bound for the slice (inclusive).
-        upper_bound: Option<Expr>,
+        upper_bound: Option<Box<Expr>>,
         /// Optional stride for the slice (step size).
-        stride: Option<Expr>,
+        stride: Option<Box<Expr>>,
     },
 }
 
@@ -7686,7 +7686,7 @@ pub enum FunctionArg {
     /// Enabled when `Dialect::supports_named_fn_args_with_expr_name` returns 'true'
     ExprNamed {
         /// The expression used as the argument name.
-        name: Expr,
+        name: Box<Expr>,
         /// The argument expression or wildcard form.
         arg: FunctionArgExpr,
         /// The operator separating name and value.
@@ -7960,7 +7960,7 @@ pub enum FunctionArgumentClause {
     /// [BigQuery]: https://cloud.google.com/bigquery/docs/reference/standard-sql/aggregate_functions#array_agg
     OrderBy(Vec<OrderByExpr>),
     /// Specifies a limit for the `ARRAY_AGG` and `ARRAY_CONCAT_AGG` functions on BigQuery.
-    Limit(Expr),
+    Limit(Box<Expr>),
     /// Specifies the behavior on overflow of the `LISTAGG` function.
     ///
     /// See <https://trino.io/docs/current/functions/aggregate.html>.

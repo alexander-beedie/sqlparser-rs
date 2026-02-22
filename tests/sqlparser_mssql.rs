@@ -985,35 +985,32 @@ fn parse_mssql_json_object() {
             ..
         }) => {
             assert!(matches!(
-                args[0],
+                &args[0],
                 FunctionArg::ExprNamed {
-                    name: Expr::Value(ValueWithSpan {
-                        value: Value::SingleQuotedString(_),
-                        span: _
-                    }),
+                    name,
                     arg: FunctionArgExpr::Expr(Expr::Function(_)),
                     operator: FunctionArgOperator::Colon
-                }
-            ));
-            assert!(matches!(
-                args[1],
-                FunctionArg::ExprNamed {
-                    name: Expr::Function(_),
-                    arg: FunctionArgExpr::Expr(Expr::Identifier(_)),
-                    operator: FunctionArgOperator::Colon
-                }
-            ));
-            assert!(matches!(
-                args[2],
-                FunctionArg::ExprNamed {
-                    name: Expr::Value(ValueWithSpan {
+                } if matches!(name.as_ref(), Expr::Value(ValueWithSpan {
                         value: Value::SingleQuotedString(_),
                         span: _
-                    }),
+                    }))));
+            assert!(matches!(
+                &args[1],
+                FunctionArg::ExprNamed {
+                    name,
+                    arg: FunctionArgExpr::Expr(Expr::Identifier(_)),
+                    operator: FunctionArgOperator::Colon
+                } if matches!(name.as_ref(), Expr::Function(_))));
+            assert!(matches!(
+                &args[2],
+                FunctionArg::ExprNamed {
+                    name,
                     arg: FunctionArgExpr::Expr(Expr::Subquery(_)),
                     operator: FunctionArgOperator::Colon
-                }
-            ));
+                } if matches!(name.as_ref(), Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(_),
+                        span: _
+                    }))));
             assert_eq!(
                 &[FunctionArgumentClause::JsonNullClause(
                     JsonNullClause::AbsentOnNull
@@ -1038,38 +1035,35 @@ fn parse_mssql_json_object() {
             ..
         } => {
             assert!(matches!(
-                args[0],
+                &args[0],
                 FunctionArg::ExprNamed {
-                    name: Expr::Value(ValueWithSpan {
-                        value: Value::SingleQuotedString(_),
-                        span: _
-                    }),
+                    name,
                     arg: FunctionArgExpr::Expr(Expr::CompoundIdentifier(_)),
                     operator: FunctionArgOperator::Colon
-                }
-            ));
+                } if matches!(name.as_ref(), Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(_),
+                        span: _
+                    }))));
             assert!(matches!(
-                args[1],
+                &args[1],
                 FunctionArg::ExprNamed {
-                    name: Expr::Value(ValueWithSpan {
-                        value: Value::SingleQuotedString(_),
-                        span: _
-                    }),
+                    name,
                     arg: FunctionArgExpr::Expr(Expr::CompoundIdentifier(_)),
                     operator: FunctionArgOperator::Colon
-                }
-            ));
+                } if matches!(name.as_ref(), Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(_),
+                        span: _
+                    }))));
             assert!(matches!(
-                args[2],
+                &args[2],
                 FunctionArg::ExprNamed {
-                    name: Expr::Value(ValueWithSpan {
-                        value: Value::SingleQuotedString(_),
-                        span: _
-                    }),
+                    name,
                     arg: FunctionArgExpr::Expr(Expr::CompoundIdentifier(_)),
                     operator: FunctionArgOperator::Colon
-                }
-            ));
+                } if matches!(name.as_ref(), Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(_),
+                        span: _
+                    }))));
         }
         _ => unreachable!(),
     }

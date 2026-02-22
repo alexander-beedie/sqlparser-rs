@@ -2083,9 +2083,9 @@ fn parse_pg_returning() {
     match stmt {
         Statement::Delete(Delete { returning, .. }) => {
             assert_eq!(
-                Some(vec![SelectItem::Wildcard(
+                Some(vec![SelectItem::Wildcard(Box::new(
                     WildcardAdditionalOptions::default()
-                ),]),
+                )),]),
                 returning
             );
         }
@@ -2439,32 +2439,32 @@ fn parse_array_subscript() {
         (
             "(ARRAY[1, 2, 3, 4, 5, 6])[2:5]",
             Subscript::Slice {
-                lower_bound: Some(Expr::value(number("2"))),
-                upper_bound: Some(Expr::value(number("5"))),
+                lower_bound: Some(Box::new(Expr::value(number("2")))),
+                upper_bound: Some(Box::new(Expr::value(number("5")))),
                 stride: None,
             },
         ),
         (
             "(ARRAY[1, 2, 3, 4, 5, 6])[2:5:3]",
             Subscript::Slice {
-                lower_bound: Some(Expr::value(number("2"))),
-                upper_bound: Some(Expr::value(number("5"))),
-                stride: Some(Expr::value(number("3"))),
+                lower_bound: Some(Box::new(Expr::value(number("2")))),
+                upper_bound: Some(Box::new(Expr::value(number("5")))),
+                stride: Some(Box::new(Expr::value(number("3")))),
             },
         ),
         (
             "arr[array_length(arr) - 3:array_length(arr) - 1]",
             Subscript::Slice {
-                lower_bound: Some(Expr::BinaryOp {
+                lower_bound: Some(Box::new(Expr::BinaryOp {
                     left: Box::new(call("array_length", [Expr::Identifier(Ident::new("arr"))])),
                     op: BinaryOperator::Minus,
                     right: Box::new(Expr::value(number("3"))),
-                }),
-                upper_bound: Some(Expr::BinaryOp {
+                })),
+                upper_bound: Some(Box::new(Expr::BinaryOp {
                     left: Box::new(call("array_length", [Expr::Identifier(Ident::new("arr"))])),
                     op: BinaryOperator::Minus,
                     right: Box::new(Expr::value(number("1"))),
-                }),
+                })),
                 stride: None,
             },
         ),
@@ -2472,14 +2472,14 @@ fn parse_array_subscript() {
             "(ARRAY[1, 2, 3, 4, 5, 6])[:5]",
             Subscript::Slice {
                 lower_bound: None,
-                upper_bound: Some(Expr::value(number("5"))),
+                upper_bound: Some(Box::new(Expr::value(number("5")))),
                 stride: None,
             },
         ),
         (
             "(ARRAY[1, 2, 3, 4, 5, 6])[2:]",
             Subscript::Slice {
-                lower_bound: Some(Expr::value(number("2"))),
+                lower_bound: Some(Box::new(Expr::value(number("2")))),
                 upper_bound: None,
                 stride: None,
             },
@@ -2522,8 +2522,8 @@ fn parse_array_multi_subscript() {
             )),
             access_chain: vec![
                 AccessExpr::Subscript(Subscript::Slice {
-                    lower_bound: Some(Expr::value(number("1"))),
-                    upper_bound: Some(Expr::value(number("2"))),
+                    lower_bound: Some(Box::new(Expr::value(number("1")))),
+                    upper_bound: Some(Box::new(Expr::value(number("2")))),
                     stride: None,
                 }),
                 AccessExpr::Subscript(Subscript::Index {
@@ -3334,7 +3334,7 @@ fn test_json() {
                 (Value::SingleQuotedString("{\"a\": 1}".to_string())).with_empty_span()
             )),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     let sql = "SELECT info FROM orders WHERE '{\"a\": 1}' <@ info";
@@ -3347,7 +3347,7 @@ fn test_json() {
             op: BinaryOperator::ArrowAt,
             right: Box::new(Expr::Identifier(Ident::new("info"))),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     let sql = "SELECT info #- ARRAY['a', 'b'] FROM orders";
@@ -3377,7 +3377,7 @@ fn test_json() {
                 (Value::SingleQuotedString("$.a".to_string())).with_empty_span()
             ),),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     let sql = "SELECT info FROM orders WHERE info @@ '$.a'";
@@ -3390,7 +3390,7 @@ fn test_json() {
                 (Value::SingleQuotedString("$.a".to_string())).with_empty_span()
             ),),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     let sql = r#"SELECT info FROM orders WHERE info ? 'b'"#;
@@ -3403,7 +3403,7 @@ fn test_json() {
                 (Value::SingleQuotedString("b".to_string())).with_empty_span()
             )),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     let sql = r#"SELECT info FROM orders WHERE info ?& ARRAY['b', 'c']"#;
@@ -3420,7 +3420,7 @@ fn test_json() {
                 named: true
             }))
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     let sql = r#"SELECT info FROM orders WHERE info ?| ARRAY['b', 'c']"#;
@@ -3437,7 +3437,7 @@ fn test_json() {
                 named: true
             }))
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 }
 
@@ -3576,7 +3576,7 @@ fn test_composite_value() {
     );
 
     assert_eq!(
-        select.selection.as_ref().unwrap(),
+        select.selection.as_deref().unwrap(),
         &Expr::BinaryOp {
             left: Box::new(Expr::CompoundFieldAccess {
                 root: Expr::Nested(Box::new(Expr::CompoundIdentifier(vec![
@@ -3865,7 +3865,7 @@ fn parse_custom_operator() {
     let select = pg().verified_only_select(sql);
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident {
                 value: "relname".into(),
                 quote_style: None,
@@ -3879,7 +3879,7 @@ fn parse_custom_operator() {
             right: Box::new(Expr::Value(
                 (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
             ))
-        })
+        }))
     );
 
     // operator with a schema
@@ -3887,7 +3887,7 @@ fn parse_custom_operator() {
     let select = pg().verified_only_select(sql);
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident {
                 value: "relname".into(),
                 quote_style: None,
@@ -3897,7 +3897,7 @@ fn parse_custom_operator() {
             right: Box::new(Expr::Value(
                 (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
             ))
-        })
+        }))
     );
 
     // custom operator without a schema
@@ -3905,7 +3905,7 @@ fn parse_custom_operator() {
     let select = pg().verified_only_select(sql);
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident {
                 value: "relname".into(),
                 quote_style: None,
@@ -3915,7 +3915,7 @@ fn parse_custom_operator() {
             right: Box::new(Expr::Value(
                 (Value::SingleQuotedString("^(table)$".into())).with_empty_span()
             ))
-        })
+        }))
     );
 }
 

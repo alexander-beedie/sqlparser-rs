@@ -1009,17 +1009,17 @@ fn parse_outer_join_operator() {
     let select = dialects.verified_only_select("SELECT 1 FROM T WHERE a = b (+)");
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("a"))),
             op: BinaryOperator::Eq,
             right: Box::new(Expr::OuterJoin(Box::new(Expr::Identifier(Ident::new("b")))))
-        })
+        }))
     );
 
     let select = dialects.verified_only_select("SELECT 1 FROM T WHERE t1.c1 = t2.c2.d3 (+)");
     assert_eq!(
         select.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::CompoundIdentifier(vec![
                 Ident::new("t1"),
                 Ident::new("c1")
@@ -1030,7 +1030,7 @@ fn parse_outer_join_operator() {
                 Ident::new("c2"),
                 Ident::new("d3"),
             ]))))
-        })
+        }))
     );
 
     let res = dialects.parse_sql_statements("SELECT 1 FROM T WHERE 1 = 2 (+)");
@@ -1132,7 +1132,7 @@ fn parse_select_wildcard() {
     let sql = "SELECT * FROM foo";
     let select = verified_only_select(sql);
     assert_eq!(
-        &SelectItem::Wildcard(WildcardAdditionalOptions::default()),
+        &SelectItem::Wildcard(Box::new(WildcardAdditionalOptions::default())),
         only(&select.projection)
     );
 
@@ -1141,8 +1141,8 @@ fn parse_select_wildcard() {
     assert_eq!(
         &SelectItem::QualifiedWildcard(
             SelectItemQualifiedWildcardKind::ObjectName(ObjectName::from(vec![Ident::new("foo")])),
-            WildcardAdditionalOptions::default()
-        ),
+            Box::new(WildcardAdditionalOptions::default()
+        )),
         only(&select.projection)
     );
 
@@ -1154,8 +1154,8 @@ fn parse_select_wildcard() {
                 Ident::new("myschema"),
                 Ident::new("mytable"),
             ])),
-            WildcardAdditionalOptions::default(),
-        ),
+            Box::new(WildcardAdditionalOptions::default(),
+        )),
         only(&select.projection)
     );
 
@@ -1497,13 +1497,13 @@ fn parse_escaped_single_quote_string_predicate_with_escape() {
     let ast = verified_only_select(sql);
 
     assert_eq!(
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("salary"))),
             op: NotEq,
             right: Box::new(Expr::Value(
                 (Value::SingleQuotedString("Jim's salary".to_string())).with_empty_span()
             )),
-        }),
+        })),
         ast.selection,
     );
 }
@@ -1523,13 +1523,13 @@ fn parse_escaped_single_quote_string_predicate_with_no_escape() {
     .verified_only_select(sql);
 
     assert_eq!(
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("salary"))),
             op: NotEq,
             right: Box::new(Expr::Value(
                 (Value::SingleQuotedString("Jim''s salary".to_string())).with_empty_span()
             )),
-        }),
+        })),
         ast.selection,
     );
 }
@@ -1701,14 +1701,14 @@ fn parse_json_object() {
         }) => assert_eq!(
             &[
                 FunctionArg::ExprNamed {
-                    name: Expr::Value((Value::SingleQuotedString("name".into())).with_empty_span()),
+                    name: Box::new(Expr::Value((Value::SingleQuotedString("name".into())).with_empty_span())),
                     arg: FunctionArgExpr::Expr(Expr::Value(
                         (Value::SingleQuotedString("value".into())).with_empty_span()
                     )),
                     operator: FunctionArgOperator::Colon
                 },
                 FunctionArg::ExprNamed {
-                    name: Expr::Value((Value::SingleQuotedString("type".into())).with_empty_span()),
+                    name: Box::new(Expr::Value((Value::SingleQuotedString("type".into())).with_empty_span())),
                     arg: FunctionArgExpr::Expr(Expr::value(number("1"))),
                     operator: FunctionArgOperator::Colon
                 }
@@ -1727,18 +1727,18 @@ fn parse_json_object() {
             assert_eq!(
                 &[
                     FunctionArg::ExprNamed {
-                        name: Expr::Value(
+                        name: Box::new(Expr::Value(
                             (Value::SingleQuotedString("name".into())).with_empty_span()
-                        ),
+                        )),
                         arg: FunctionArgExpr::Expr(Expr::Value(
                             (Value::SingleQuotedString("value".into())).with_empty_span()
                         )),
                         operator: FunctionArgOperator::Colon
                     },
                     FunctionArg::ExprNamed {
-                        name: Expr::Value(
+                        name: Box::new(Expr::Value(
                             (Value::SingleQuotedString("type".into())).with_empty_span()
-                        ),
+                        )),
                         arg: FunctionArgExpr::Expr(Expr::Value((Value::Null).with_empty_span())),
                         operator: FunctionArgOperator::Colon
                     }
@@ -1796,7 +1796,7 @@ fn parse_json_object() {
         }) => {
             assert_eq!(
                 &FunctionArg::ExprNamed {
-                    name: Expr::Value((Value::SingleQuotedString("name".into())).with_empty_span()),
+                    name: Box::new(Expr::Value((Value::SingleQuotedString("name".into())).with_empty_span())),
                     arg: FunctionArgExpr::Expr(Expr::Value(
                         (Value::SingleQuotedString("value".into())).with_empty_span()
                     )),
@@ -1805,16 +1805,15 @@ fn parse_json_object() {
                 &args[0]
             );
             assert!(matches!(
-                args[1],
+                &args[1],
                 FunctionArg::ExprNamed {
-                    name: Expr::Value(ValueWithSpan {
-                        value: Value::SingleQuotedString(_),
-                        span: _
-                    }),
+                    name,
                     arg: FunctionArgExpr::Expr(Expr::Function(_)),
                     operator: FunctionArgOperator::Colon
-                }
-            ));
+                } if matches!(name.as_ref(), Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(_),
+                        span: _
+                    }))));
             assert_eq!(
                 &[FunctionArgumentClause::JsonNullClause(
                     JsonNullClause::AbsentOnNull
@@ -1834,7 +1833,7 @@ fn parse_json_object() {
         }) => {
             assert_eq!(
                 &FunctionArg::ExprNamed {
-                    name: Expr::Value((Value::SingleQuotedString("name".into())).with_empty_span()),
+                    name: Box::new(Expr::Value((Value::SingleQuotedString("name".into())).with_empty_span())),
                     arg: FunctionArgExpr::Expr(Expr::Value(
                         (Value::SingleQuotedString("value".into())).with_empty_span()
                     )),
@@ -1843,16 +1842,15 @@ fn parse_json_object() {
                 &args[0]
             );
             assert!(matches!(
-                args[1],
+                &args[1],
                 FunctionArg::ExprNamed {
-                    name: Expr::Value(ValueWithSpan {
-                        value: Value::SingleQuotedString(_),
-                        span: _
-                    }),
+                    name,
                     arg: FunctionArgExpr::Expr(Expr::Function(_)),
                     operator: FunctionArgOperator::Colon
-                }
-            ));
+                } if matches!(name.as_ref(), Expr::Value(ValueWithSpan {
+                        value: Value::SingleQuotedString(_),
+                        span: _
+                    }))));
             assert_eq!(
                 &[FunctionArgumentClause::JsonNullClause(
                     JsonNullClause::NullOnNull
@@ -2063,7 +2061,7 @@ fn parse_ilike() {
                 escape_char: None,
                 any: false,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
 
         // Test with escape char
@@ -2082,7 +2080,7 @@ fn parse_ilike() {
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
                 any: false,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
 
         // This statement tests that ILIKE and NOT ILIKE have the same precedence.
@@ -2102,7 +2100,7 @@ fn parse_ilike() {
                 escape_char: None,
                 any: false,
             })),
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
     }
     chk(false);
@@ -2127,7 +2125,7 @@ fn parse_like() {
                 escape_char: None,
                 any: false,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
 
         // Test with escape char
@@ -2146,7 +2144,7 @@ fn parse_like() {
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
                 any: false,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
 
         // This statement tests that LIKE and NOT LIKE have the same precedence.
@@ -2166,7 +2164,7 @@ fn parse_like() {
                 escape_char: None,
                 any: false,
             })),
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
     }
     chk(false);
@@ -2190,7 +2188,7 @@ fn parse_similar_to() {
                 )),
                 escape_char: None,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
 
         // Test with escape char
@@ -2208,7 +2206,7 @@ fn parse_similar_to() {
                 )),
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
 
         let sql = &format!(
@@ -2225,7 +2223,7 @@ fn parse_similar_to() {
                 )),
                 escape_char: Some(Value::Null),
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
 
         // This statement tests that SIMILAR TO and NOT SIMILAR TO have the same precedence.
@@ -2243,7 +2241,7 @@ fn parse_similar_to() {
                 )),
                 escape_char: Some(Value::SingleQuotedString('^'.to_string())),
             })),
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
     }
     chk(false);
@@ -2267,7 +2265,7 @@ fn parse_in_list() {
                 ],
                 negated,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
     }
     chk(false);
@@ -2284,7 +2282,7 @@ fn parse_in_subquery() {
             subquery: Box::new(verified_query("SELECT segm FROM bar")),
             negated: false,
         },
-        select.selection.unwrap()
+        *select.selection.unwrap()
     );
 }
 
@@ -2300,7 +2298,7 @@ fn parse_in_union() {
             )),
             negated: false,
         },
-        select.selection.unwrap()
+        *select.selection.unwrap()
     );
 }
 
@@ -2318,7 +2316,7 @@ fn parse_in_unnest() {
                 array_expr: Box::new(verified_expr("expr")),
                 negated,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
     }
     chk(false);
@@ -2448,7 +2446,7 @@ fn parse_between() {
                 high: Box::new(Expr::value(number("32"))),
                 negated,
             },
-            select.selection.unwrap()
+            *select.selection.unwrap()
         );
     }
     chk(false);
@@ -2475,7 +2473,7 @@ fn parse_between_with_expr() {
             }),
             negated: false,
         })),
-        select.selection.unwrap()
+        *select.selection.unwrap()
     );
 
     let sql = "SELECT * FROM t WHERE 1 = 1 AND 1 + x BETWEEN 1 AND 2";
@@ -2499,7 +2497,7 @@ fn parse_between_with_expr() {
                 negated: false,
             }),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     )
 }
 
@@ -2940,7 +2938,7 @@ fn parse_select_having() {
     let sql = "SELECT foo FROM bar GROUP BY foo HAVING COUNT(*) > 1";
     let select = verified_only_select(sql);
     assert_eq!(
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Function(Function {
                 name: ObjectName::from(vec![Ident::new("COUNT")]),
                 uses_odbc_syntax: false,
@@ -2957,7 +2955,7 @@ fn parse_select_having() {
             })),
             op: BinaryOperator::Gt,
             right: Box::new(Expr::value(number("1"))),
-        }),
+        })),
         select.having
     );
 
@@ -2971,7 +2969,7 @@ fn parse_select_qualify() {
     let sql = "SELECT i, p, o FROM qt QUALIFY ROW_NUMBER() OVER (PARTITION BY p ORDER BY o) = 1";
     let select = verified_only_select(sql);
     assert_eq!(
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Function(Function {
                 name: ObjectName::from(vec![Ident::new("ROW_NUMBER")]),
                 uses_odbc_syntax: false,
@@ -3000,18 +2998,18 @@ fn parse_select_qualify() {
             })),
             op: BinaryOperator::Eq,
             right: Box::new(Expr::value(number("1"))),
-        }),
+        })),
         select.qualify
     );
 
     let sql = "SELECT i, p, o, ROW_NUMBER() OVER (PARTITION BY p ORDER BY o) AS row_num FROM qt QUALIFY row_num = 1";
     let select = verified_only_select(sql);
     assert_eq!(
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("row_num"))),
             op: BinaryOperator::Eq,
             right: Box::new(Expr::value(number("1"))),
-        }),
+        })),
         select.qualify
     );
 }
@@ -6573,7 +6571,7 @@ fn parse_interval_and_or_xor() {
             }],
             lateral_views: vec![],
             prewhere: None,
-            selection: Some(Expr::BinaryOp {
+            selection: Some(Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident {
                         value: "d3_date".to_string(),
@@ -6625,7 +6623,7 @@ fn parse_interval_and_or_xor() {
                         })),
                     }),
                 }),
-            }),
+            })),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             cluster_by: vec![],
             distribute_by: vec![],
@@ -8111,7 +8109,7 @@ fn parse_exists_subquery() {
             negated: false,
             subquery: Box::new(expected_inner.clone()),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     let sql = "SELECT * FROM t WHERE NOT EXISTS (SELECT 1)";
@@ -8121,7 +8119,7 @@ fn parse_exists_subquery() {
             negated: true,
             subquery: Box::new(expected_inner),
         },
-        select.selection.unwrap(),
+        *select.selection.unwrap(),
     );
 
     verified_stmt("SELECT * FROM t WHERE EXISTS (WITH u AS (SELECT 1) SELECT * FROM u)");
@@ -8933,7 +8931,7 @@ fn lateral_function() {
         distinct: None,
         select_modifiers: None,
         top: None,
-        projection: vec![SelectItem::Wildcard(WildcardAdditionalOptions::default())],
+        projection: vec![SelectItem::Wildcard(Box::new(WildcardAdditionalOptions::default()))],
         exclude: None,
         top_before_distinct: false,
         into: None,
@@ -9937,9 +9935,9 @@ fn parse_merge() {
                             select_modifiers: None,
                             top: None,
                             top_before_distinct: false,
-                            projection: vec![SelectItem::Wildcard(
+                            projection: vec![SelectItem::Wildcard(Box::new(
                                 WildcardAdditionalOptions::default()
-                            )],
+                            ))],
                             exclude: None,
                             into: None,
                             from: vec![TableWithJoins {
@@ -10368,13 +10366,13 @@ fn test_placeholder() {
     let ast = dialects.verified_only_select(sql);
     assert_eq!(
         ast.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("id"))),
             op: BinaryOperator::Eq,
             right: Box::new(Expr::Value(
                 (Value::Placeholder("$Id1".into())).with_empty_span()
             )),
-        })
+        }))
     );
 
     let ast = dialects.verified_query("SELECT * FROM student LIMIT $1 OFFSET $2");
@@ -10406,13 +10404,13 @@ fn test_placeholder() {
     let ast = dialects.verified_only_select(sql);
     assert_eq!(
         ast.selection,
-        Some(Expr::BinaryOp {
+        Some(Box::new(Expr::BinaryOp {
             left: Box::new(Expr::Identifier(Ident::new("id"))),
             op: BinaryOperator::Eq,
             right: Box::new(Expr::Value(
                 (Value::Placeholder("?".into())).with_empty_span()
             )),
-        })
+        }))
     );
 
     let sql = "SELECT $fromage_français, :x, ?123";
@@ -12830,11 +12828,11 @@ fn parse_connect_by() {
             into: None,
             lateral_views: vec![],
             prewhere: None,
-            selection: Some(Expr::BinaryOp {
+            selection: Some(Box::new(Expr::BinaryOp {
                 left: Box::new(Expr::Identifier(Ident::new("employee_id"))),
                 op: BinaryOperator::NotEq,
                 right: Box::new(Expr::value(number("42"))),
-            }),
+            })),
             group_by: GroupByExpr::Expressions(vec![], vec![]),
             cluster_by: vec![],
             distribute_by: vec![],
@@ -13389,7 +13387,7 @@ fn test_select_wildcard_with_replace() {
         Box::new(DuckDbDialect {}),
     ]);
     let select = dialects.verified_only_select(sql);
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_replace: Some(ReplaceSelectItem {
             items: vec![Box::new(ReplaceSelectElement {
                 expr: call("lower", [Expr::Identifier(Ident::new("city"))]),
@@ -13398,12 +13396,12 @@ fn test_select_wildcard_with_replace() {
             })],
         }),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     let select =
         dialects.verified_only_select(r#"SELECT * REPLACE ('widget' AS item_name) FROM orders"#);
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_replace: Some(ReplaceSelectItem {
             items: vec![Box::new(ReplaceSelectElement {
                 expr: Expr::Value(
@@ -13414,13 +13412,13 @@ fn test_select_wildcard_with_replace() {
             })],
         }),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     let select = dialects.verified_only_select(
         r#"SELECT * REPLACE (quantity / 2 AS quantity, 3 AS order_id) FROM orders"#,
     );
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_replace: Some(ReplaceSelectItem {
             items: vec![
                 Box::new(ReplaceSelectElement {
@@ -13440,7 +13438,7 @@ fn test_select_wildcard_with_replace() {
             ],
         }),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 }
 
@@ -13774,24 +13772,24 @@ fn parse_select_wildcard_with_except() {
     let dialects = all_dialects_where(|d| d.supports_select_wildcard_except());
 
     let select = dialects.verified_only_select("SELECT * EXCEPT (col_a) FROM data");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_except: Some(ExceptSelectItem {
             first_element: Ident::new("col_a"),
             additional_elements: vec![],
         }),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     let select = dialects
         .verified_only_select("SELECT * EXCEPT (department_id, employee_id) FROM employee_table");
-    let expected = SelectItem::Wildcard(WildcardAdditionalOptions {
+    let expected = SelectItem::Wildcard(Box::new(WildcardAdditionalOptions {
         opt_except: Some(ExceptSelectItem {
             first_element: Ident::new("department_id"),
             additional_elements: vec![Ident::new("employee_id")],
         }),
         ..Default::default()
-    });
+    }));
     assert_eq!(expected, select.projection[0]);
 
     assert_eq!(
@@ -15441,7 +15439,7 @@ fn parse_composite_access_expr() {
     };
 
     assert_eq!(stmt.projection[0], SelectItem::UnnamedExpr(expr.clone()));
-    assert_eq!(stmt.selection.unwrap(), Expr::IsNotNull(Box::new(expr)));
+    assert_eq!(*stmt.selection.unwrap(), Expr::IsNotNull(Box::new(expr)));
 
     // Compound access with quoted identifier.
     all_dialects_where(|d| d.is_delimited_identifier_start('"'))
@@ -16020,7 +16018,7 @@ fn test_select_from_first() {
         (
             q2,
             SelectFlavor::FromFirst,
-            vec![SelectItem::Wildcard(WildcardAdditionalOptions::default())],
+            vec![SelectItem::Wildcard(Box::new(WildcardAdditionalOptions::default()))],
         ),
     ] {
         let ast = dialects.verified_query(q);
@@ -17297,7 +17295,8 @@ fn test_select_exclude() {
         .verified_only_select("SELECT * EXCLUDE c1 FROM test")
         .projection[0]
     {
-        SelectItem::Wildcard(WildcardAdditionalOptions { opt_exclude, .. }) => {
+        SelectItem::Wildcard(wao_box) => {
+            let WildcardAdditionalOptions { opt_exclude, .. } = wao_box.as_ref();
             assert_eq!(
                 *opt_exclude,
                 Some(ExcludeSelectItem::Single(Ident::new("c1")))
@@ -17309,7 +17308,8 @@ fn test_select_exclude() {
         .verified_only_select("SELECT * EXCLUDE (c1, c2) FROM test")
         .projection[0]
     {
-        SelectItem::Wildcard(WildcardAdditionalOptions { opt_exclude, .. }) => {
+        SelectItem::Wildcard(wao_box) => {
+            let WildcardAdditionalOptions { opt_exclude, .. } = wao_box.as_ref();
             assert_eq!(
                 *opt_exclude,
                 Some(ExcludeSelectItem::Multiple(vec![
@@ -17322,7 +17322,8 @@ fn test_select_exclude() {
     }
     let select = dialects.verified_only_select("SELECT * EXCLUDE c1, c2 FROM test");
     match &select.projection[0] {
-        SelectItem::Wildcard(WildcardAdditionalOptions { opt_exclude, .. }) => {
+        SelectItem::Wildcard(wao_box) => {
+            let WildcardAdditionalOptions { opt_exclude, .. } = wao_box.as_ref();
             assert_eq!(
                 *opt_exclude,
                 Some(ExcludeSelectItem::Single(Ident::new("c1")))
@@ -17341,7 +17342,7 @@ fn test_select_exclude() {
     let select = dialects.verified_only_select("SELECT *, c1 EXCLUDE c1 FROM test");
     match &select.projection[0] {
         SelectItem::Wildcard(additional_options) => {
-            assert_eq!(*additional_options, WildcardAdditionalOptions::default());
+            assert_eq!(**additional_options, WildcardAdditionalOptions::default());
         }
         _ => unreachable!(),
     }
@@ -17355,7 +17356,8 @@ fn test_select_exclude() {
     });
     let select = dialects.verified_only_select("SELECT * EXCLUDE c1 FROM test");
     match &select.projection[0] {
-        SelectItem::Wildcard(WildcardAdditionalOptions { opt_exclude, .. }) => {
+        SelectItem::Wildcard(wao_box) => {
+            let WildcardAdditionalOptions { opt_exclude, .. } = wao_box.as_ref();
             assert_eq!(
                 *opt_exclude,
                 Some(ExcludeSelectItem::Single(Ident::new("c1")))

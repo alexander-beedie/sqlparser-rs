@@ -4171,7 +4171,7 @@ fn parse_match_against_with_alias() {
     let sql = "SELECT tbl.ProjectID FROM surveys.tbl1 AS tbl WHERE MATCH (tbl.ReferenceID) AGAINST ('AAA' IN BOOLEAN MODE)";
     match mysql().verified_stmt(sql) {
         Statement::Query(query) => match *query.body {
-            SetExpr::Select(select) => match select.selection {
+            SetExpr::Select(select) => match select.selection.map(|b| *b) {
                 Some(Expr::MatchAgainst {
                     columns,
                     match_value,
@@ -4243,7 +4243,7 @@ fn test_variable_assignment_using_colon_equal() {
 
             assert_eq!(
                 select.selection,
-                Some(Expr::BinaryOp {
+                Some(Box::new(Expr::BinaryOp {
                     left: Box::new(Expr::Identifier(Ident {
                         value: "id".to_string(),
                         quote_style: None,
@@ -4251,7 +4251,7 @@ fn test_variable_assignment_using_colon_equal() {
                     })),
                     op: BinaryOperator::Eq,
                     right: Box::new(Expr::Value((test_utils::number("1")).with_empty_span())),
-                })
+                }))
             );
         }
         _ => panic!("Unexpected statement {stmt}"),
