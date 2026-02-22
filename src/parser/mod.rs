@@ -1387,7 +1387,7 @@ impl<'a> Parser<'a> {
         debug!("parsing expr");
         let mut expr = self.parse_prefix()?;
 
-        expr = self.parse_compound_expr(expr, vec![])?;
+        expr = self.parse_compound_expr(expr, None)?;
 
         debug!("prefix: {expr:?}");
         loop {
@@ -1705,34 +1705,42 @@ impl<'a> Parser<'a> {
         // name is not followed by a string literal, but in fact in PostgreSQL it is a valid
         // expression that should parse as the column name "date".
         let loc = self.peek_token_ref().span.start;
-        let opt_expr = self.maybe_parse(|parser| {
-            match parser.parse_data_type()? {
-                DataType::Interval { .. } => parser.parse_interval(),
-                // PostgreSQL allows almost any identifier to be used as custom data type name,
-                // and we support that in `parse_data_type()`. But unlike Postgres we don't
-                // have a list of globally reserved keywords (since they vary across dialects),
-                // so given `NOT 'a' LIKE 'b'`, we'd accept `NOT` as a possible custom data type
-                // name, resulting in `NOT 'a'` being recognized as a `TypedString` instead of
-                // an unary negation `NOT ('a' LIKE 'b')`. To solve this, we don't accept the
-                // `type 'string'` syntax for the custom data types at all.
-                DataType::Custom(..) => parser_err!("dummy", loc),
-                // MySQL supports using the `BINARY` keyword as a cast to binary type.
-                DataType::Binary(..) if self.dialect.supports_binary_kw_as_cast() => {
-                    Ok(Expr::Cast {
-                        kind: CastKind::Cast,
-                        expr: Box::new(parser.parse_expr()?),
-                        data_type: DataType::Binary(None),
-                        array: false,
-                        format: None,
-                    })
+        // Short-circuit: only attempt typed-string parsing if the next token
+        // is a known data type keyword. Since DataType::Custom is rejected
+        // below anyway, there is no point speculatively parsing (and then
+        // dropping) a full DataType for every non-type-keyword token.
+        let opt_expr = if self.peek_known_data_type_keyword() {
+            self.maybe_parse(|parser| {
+                match parser.parse_data_type()? {
+                    DataType::Interval { .. } => parser.parse_interval(),
+                    // PostgreSQL allows almost any identifier to be used as custom data type name,
+                    // and we support that in `parse_data_type()`. But unlike Postgres we don't
+                    // have a list of globally reserved keywords (since they vary across dialects),
+                    // so given `NOT 'a' LIKE 'b'`, we'd accept `NOT` as a possible custom data type
+                    // name, resulting in `NOT 'a'` being recognized as a `TypedString` instead of
+                    // an unary negation `NOT ('a' LIKE 'b')`. To solve this, we don't accept the
+                    // `type 'string'` syntax for the custom data types at all.
+                    DataType::Custom(..) => parser_err!("dummy", loc),
+                    // MySQL supports using the `BINARY` keyword as a cast to binary type.
+                    DataType::Binary(..) if self.dialect.supports_binary_kw_as_cast() => {
+                        Ok(Expr::Cast {
+                            kind: CastKind::Cast,
+                            expr: Box::new(parser.parse_expr()?),
+                            data_type: DataType::Binary(None),
+                            array: false,
+                            format: None,
+                        })
+                    }
+                    data_type => Ok(Expr::TypedString(TypedString {
+                        data_type,
+                        value: parser.parse_value()?,
+                        uses_odbc_syntax: false,
+                    })),
                 }
-                data_type => Ok(Expr::TypedString(TypedString {
-                    data_type,
-                    value: parser.parse_value()?,
-                    uses_odbc_syntax: false,
-                })),
-            }
-        })?;
+            })?
+        } else {
+            None
+        };
 
         if let Some(expr) = opt_expr {
             return Ok(expr);
@@ -1956,7 +1964,7 @@ impl<'a> Parser<'a> {
     pub fn parse_compound_expr(
         &mut self,
         root: Expr,
-        mut chain: Vec<AccessExpr>,
+        mut chain: Option<Vec<AccessExpr>>,
     ) -> Result<Expr, ParserError> {
         let mut ending_wildcard: Option<TokenWithSpan> = None;
         loop {
@@ -5980,7 +5988,11 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if let Some(next_data_type) = self.maybe_parse(parse_data_type_no_default)? {
+        if let Some(next_data_type) = if matches!(self.peek_token_ref().token, Token::Word(_)) {
+            self.maybe_parse(parse_data_type_no_default)?
+        } else {
+            None
+        } {
             let token = self.token_at(data_type_idx);
 
             // We ensure that the token is a `Word` token, and not other special tokens.
@@ -8931,8 +8943,12 @@ impl<'a> Parser<'a> {
         let data_type = if self.is_column_type_sqlite_unspecified() {
             DataType::Unspecified
         } else if optional_data_type {
-            self.maybe_parse(|parser| parser.parse_data_type())?
-                .unwrap_or(DataType::Unspecified)
+            if matches!(self.peek_token_ref().token, Token::Word(_)) {
+                self.maybe_parse(|parser| parser.parse_data_type())?
+                    .unwrap_or(DataType::Unspecified)
+            } else {
+                DataType::Unspecified
+            }
         } else {
             self.parse_data_type()?
         };
@@ -11734,6 +11750,116 @@ impl<'a> Parser<'a> {
         Ok(values)
     }
 
+    /// Returns true if the next token is a keyword that can start a known
+    /// (non-custom) data type. This is useful for short-circuiting speculative
+    /// `parse_data_type` calls: if the next token is not a data type keyword,
+    /// we can skip the attempt entirely and avoid allocating a `DataType` value
+    /// that would be immediately dropped on failure.
+    ///
+    /// Note: this does NOT cover custom data types (arbitrary identifiers).
+    /// It only checks for built-in SQL type keywords.
+    fn peek_known_data_type_keyword(&self) -> bool {
+        match &self.peek_token_ref().token {
+            Token::Word(w) => matches!(
+                w.keyword,
+                Keyword::BOOLEAN
+                    | Keyword::BOOL
+                    | Keyword::FLOAT
+                    | Keyword::REAL
+                    | Keyword::FLOAT4
+                    | Keyword::FLOAT32
+                    | Keyword::FLOAT64
+                    | Keyword::FLOAT8
+                    | Keyword::DOUBLE
+                    | Keyword::TINYINT
+                    | Keyword::INT2
+                    | Keyword::SMALLINT
+                    | Keyword::MEDIUMINT
+                    | Keyword::INT
+                    | Keyword::INT4
+                    | Keyword::INT8
+                    | Keyword::INT16
+                    | Keyword::INT32
+                    | Keyword::INT64
+                    | Keyword::INT128
+                    | Keyword::INT256
+                    | Keyword::INTEGER
+                    | Keyword::BIGINT
+                    | Keyword::HUGEINT
+                    | Keyword::UBIGINT
+                    | Keyword::UHUGEINT
+                    | Keyword::USMALLINT
+                    | Keyword::UTINYINT
+                    | Keyword::UINT8
+                    | Keyword::UINT16
+                    | Keyword::UINT32
+                    | Keyword::UINT64
+                    | Keyword::UINT128
+                    | Keyword::UINT256
+                    | Keyword::VARCHAR
+                    | Keyword::NVARCHAR
+                    | Keyword::CHARACTER
+                    | Keyword::CHAR
+                    | Keyword::CLOB
+                    | Keyword::BINARY
+                    | Keyword::VARBINARY
+                    | Keyword::BLOB
+                    | Keyword::TINYBLOB
+                    | Keyword::MEDIUMBLOB
+                    | Keyword::LONGBLOB
+                    | Keyword::BYTES
+                    | Keyword::BIT
+                    | Keyword::VARBIT
+                    | Keyword::UUID
+                    | Keyword::DATE
+                    | Keyword::DATE32
+                    | Keyword::DATETIME
+                    | Keyword::DATETIME64
+                    | Keyword::TIMESTAMP
+                    | Keyword::TIMESTAMPTZ
+                    | Keyword::TIMESTAMP_NTZ
+                    | Keyword::TIME
+                    | Keyword::TIMETZ
+                    | Keyword::INTERVAL
+                    | Keyword::JSON
+                    | Keyword::JSONB
+                    | Keyword::REGCLASS
+                    | Keyword::STRING
+                    | Keyword::FIXEDSTRING
+                    | Keyword::TEXT
+                    | Keyword::TINYTEXT
+                    | Keyword::MEDIUMTEXT
+                    | Keyword::LONGTEXT
+                    | Keyword::BYTEA
+                    | Keyword::NUMERIC
+                    | Keyword::DECIMAL
+                    | Keyword::DEC
+                    | Keyword::BIGNUMERIC
+                    | Keyword::BIGDECIMAL
+                    | Keyword::ENUM
+                    | Keyword::ENUM8
+                    | Keyword::ENUM16
+                    | Keyword::SET
+                    | Keyword::ARRAY
+                    | Keyword::STRUCT
+                    | Keyword::UNION
+                    | Keyword::NULLABLE
+                    | Keyword::LOWCARDINALITY
+                    | Keyword::MAP
+                    | Keyword::NESTED
+                    | Keyword::TUPLE
+                    | Keyword::TRIGGER
+                    | Keyword::ANY
+                    | Keyword::TABLE
+                    | Keyword::SIGNED
+                    | Keyword::UNSIGNED
+                    | Keyword::TSVECTOR
+                    | Keyword::TSQUERY
+            ),
+            _ => false,
+        }
+    }
+
     /// Parse a SQL datatype (in the context of a CREATE TABLE statement for example)
     pub fn parse_data_type(&mut self) -> Result<DataType, ParserError> {
         let (ty, trailing_bracket) = self.parse_data_type_helper()?;
@@ -12983,7 +13109,11 @@ impl<'a> Parser<'a> {
         if self.consume_token(&Token::LParen) {
             let cols = self.parse_comma_separated(|p| {
                 let name = p.parse_identifier()?;
-                let data_type = p.maybe_parse(|p| p.parse_data_type())?;
+                let data_type = if matches!(p.peek_token_ref().token, Token::Word(_)) {
+                    p.maybe_parse(|p| p.parse_data_type())?
+                } else {
+                    None
+                };
                 Ok(TableAliasColumnDef { name, data_type })
             })?;
             self.expect_token(&Token::RParen)?;
