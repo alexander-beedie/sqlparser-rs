@@ -3306,11 +3306,11 @@ impl Display for Set {
                 role_name,
             } => {
                 let role_name = role_name.clone().unwrap_or_else(|| Ident::new("NONE"));
-                write!(
-                    f,
-                    "SET {modifier}ROLE {role_name}",
-                    modifier = context_modifier.map(|m| format!("{m}")).unwrap_or_default()
-                )
+                f.write_str("SET ")?;
+                if let Some(m) = context_modifier {
+                    write!(f, "{m}")?;
+                }
+                write!(f, "ROLE {role_name}")
             }
             Self::SetSessionAuthorization(kind) => write!(f, "SET SESSION AUTHORIZATION {kind}"),
             Self::SetSessionParam(kind) => write!(f, "SET {kind}"),
@@ -3363,10 +3363,13 @@ impl Display for Set {
                 variable,
                 values,
             } => {
+                f.write_str("SET ")?;
+                if let Some(s) = scope {
+                    write!(f, "{s}")?;
+                }
                 write!(
                     f,
-                    "SET {}{}{} = {}",
-                    scope.map(|s| format!("{s}")).unwrap_or_default(),
+                    "{}{} = {}",
                     if *hivevar { "HIVEVAR:" } else { "" },
                     variable,
                     display_comma_separated(values)
@@ -5991,21 +5994,16 @@ impl fmt::Display for Statement {
                 sequence_options,
                 owned_by,
             } => {
-                let as_type: String = if let Some(dt) = data_type.as_ref() {
-                    //Cannot use format!(" AS {}", dt), due to format! is not available in --target thumbv6m-none-eabi
-                    // " AS ".to_owned() + &dt.to_string()
-                    [" AS ", &dt.to_string()].concat()
-                } else {
-                    "".to_string()
-                };
                 write!(
                     f,
-                    "CREATE {temporary}SEQUENCE {if_not_exists}{name}{as_type}",
+                    "CREATE {temporary}SEQUENCE {if_not_exists}{name}",
                     if_not_exists = if *if_not_exists { "IF NOT EXISTS " } else { "" },
                     temporary = if *temporary { "TEMPORARY " } else { "" },
                     name = name,
-                    as_type = as_type
                 )?;
+                if let Some(dt) = data_type.as_ref() {
+                    write!(f, " AS {dt}")?;
+                }
                 for sequence_option in sequence_options {
                     write!(f, "{sequence_option}")?;
                 }
@@ -6339,13 +6337,10 @@ pub struct SetAssignment {
 
 impl fmt::Display for SetAssignment {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}{} = {}",
-            self.scope.map(|s| format!("{s}")).unwrap_or_default(),
-            self.name,
-            self.value
-        )
+        if let Some(s) = self.scope {
+            write!(f, "{s}")?;
+        }
+        write!(f, "{} = {}", self.name, self.value)
     }
 }
 
@@ -6663,26 +6658,23 @@ pub enum FetchDirection {
 impl fmt::Display for FetchDirection {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            FetchDirection::Count { limit } => f.write_str(&limit.to_string())?,
+            FetchDirection::Count { limit } => write!(f, "{limit}")?,
             FetchDirection::Next => f.write_str("NEXT")?,
             FetchDirection::Prior => f.write_str("PRIOR")?,
             FetchDirection::First => f.write_str("FIRST")?,
             FetchDirection::Last => f.write_str("LAST")?,
             FetchDirection::Absolute { limit } => {
-                f.write_str("ABSOLUTE ")?;
-                f.write_str(&limit.to_string())?;
+                write!(f, "ABSOLUTE {limit}")?;
             }
             FetchDirection::Relative { limit } => {
-                f.write_str("RELATIVE ")?;
-                f.write_str(&limit.to_string())?;
+                write!(f, "RELATIVE {limit}")?;
             }
             FetchDirection::All => f.write_str("ALL")?,
             FetchDirection::Forward { limit } => {
                 f.write_str("FORWARD")?;
 
                 if let Some(l) = limit {
-                    f.write_str(" ")?;
-                    f.write_str(&l.to_string())?;
+                    write!(f, " {l}")?;
                 }
             }
             FetchDirection::ForwardAll => f.write_str("FORWARD ALL")?,
@@ -6690,8 +6682,7 @@ impl fmt::Display for FetchDirection {
                 f.write_str("BACKWARD")?;
 
                 if let Some(l) = limit {
-                    f.write_str(" ")?;
-                    f.write_str(&l.to_string())?;
+                    write!(f, " {l}")?;
                 }
             }
             FetchDirection::BackwardAll => f.write_str("BACKWARD ALL")?,
@@ -10498,35 +10489,24 @@ pub struct ShowStatementOptions {
 
 impl Display for ShowStatementOptions {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let (like_in_infix, like_in_suffix) = match &self.filter_position {
-            Some(ShowStatementFilterPosition::Infix(filter)) => {
-                (format!(" {filter}"), "".to_string())
-            }
-            Some(ShowStatementFilterPosition::Suffix(filter)) => {
-                ("".to_string(), format!(" {filter}"))
-            }
-            None => ("".to_string(), "".to_string()),
-        };
-        write!(
-            f,
-            "{like_in_infix}{show_in}{starts_with}{limit}{from}{like_in_suffix}",
-            show_in = match &self.show_in {
-                Some(i) => format!(" {i}"),
-                None => String::new(),
-            },
-            starts_with = match &self.starts_with {
-                Some(s) => format!(" STARTS WITH {s}"),
-                None => String::new(),
-            },
-            limit = match &self.limit {
-                Some(l) => format!(" LIMIT {l}"),
-                None => String::new(),
-            },
-            from = match &self.limit_from {
-                Some(f) => format!(" FROM {f}"),
-                None => String::new(),
-            }
-        )?;
+        if let Some(ShowStatementFilterPosition::Infix(filter)) = &self.filter_position {
+            write!(f, " {filter}")?;
+        }
+        if let Some(i) = &self.show_in {
+            write!(f, " {i}")?;
+        }
+        if let Some(s) = &self.starts_with {
+            write!(f, " STARTS WITH {s}")?;
+        }
+        if let Some(l) = &self.limit {
+            write!(f, " LIMIT {l}")?;
+        }
+        if let Some(lf) = &self.limit_from {
+            write!(f, " FROM {lf}")?;
+        }
+        if let Some(ShowStatementFilterPosition::Suffix(filter)) = &self.filter_position {
+            write!(f, " {filter}")?;
+        }
         Ok(())
     }
 }
