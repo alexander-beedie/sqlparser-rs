@@ -156,12 +156,12 @@ pub enum SetExpr {
     /// UNION/EXCEPT/INTERSECT of two queries
     /// A set operation combining two query expressions.
     SetOperation {
+        /// Left operand of the set operation.
+        left: Box<SetExpr>,
         /// The set operator used (e.g. `UNION`, `EXCEPT`).
         op: SetOperator,
         /// Optional quantifier (`ALL`, `DISTINCT`, etc.).
         set_quantifier: SetQuantifier,
-        /// Left operand of the set operation.
-        left: Box<SetExpr>,
         /// Right operand of the set operation.
         right: Box<SetExpr>,
     },
@@ -442,6 +442,7 @@ impl SelectModifiers {
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "visitor", derive(Visit, VisitMut))]
+#[cfg_attr(feature = "visitor", visit(with = "visit_select"))]
 pub struct Select {
     /// Token for the `SELECT` keyword
     pub select_token: AttachedToken,
