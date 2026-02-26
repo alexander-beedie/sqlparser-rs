@@ -18583,3 +18583,19 @@ fn parse_array_subscript() {
     dialects.verified_stmt("SELECT arr[1][2]");
     dialects.verified_stmt("SELECT arr[:][:]");
 }
+
+#[test]
+fn test_wildcard_func_arg() {
+    // Wildcard (*) and wildcard with EXCLUDE as a function argument.
+    // Documented for Snowflake's HASH function but parsed for any dialect that
+    // supports the wildcard-EXCLUDE select syntax.
+    let dialects = all_dialects_where(|d| d.supports_select_wildcard_exclude());
+
+    // Wildcard with EXCLUDE — canonical form has a space before the parenthesised column list.
+    dialects.one_statement_parses_to(
+        "SELECT HASH(* EXCLUDE(col1)) FROM t",
+        "SELECT HASH(* EXCLUDE (col1)) FROM t",
+    );
+    dialects.verified_expr("HASH(* EXCLUDE (col1))");
+    dialects.verified_expr("HASH(* EXCLUDE (col1, col2))");
+}

@@ -17576,7 +17576,26 @@ impl<'a> Parser<'a> {
         if let Some(arg) = arg {
             return Ok(arg);
         }
-        Ok(FunctionArg::Unnamed(self.parse_wildcard_expr()?.into()))
+        let wildcard_expr = self.parse_wildcard_expr()?;
+        let arg_expr: FunctionArgExpr = match wildcard_expr {
+            Expr::Wildcard(ref token) if self.dialect.supports_select_wildcard_exclude() => {
+                // Support `* EXCLUDE(col1, col2, ...)` inside function calls (e.g. Snowflake's
+                // `HASH(* EXCLUDE(col))`).  Parse the options the same way SELECT items do.
+                let opts = self.parse_wildcard_additional_options(token.0.clone())?;
+                if opts.opt_exclude.is_some()
+                    || opts.opt_except.is_some()
+                    || opts.opt_replace.is_some()
+                    || opts.opt_rename.is_some()
+                    || opts.opt_ilike.is_some()
+                {
+                    FunctionArgExpr::WildcardWithOptions(opts)
+                } else {
+                    wildcard_expr.into()
+                }
+            }
+            other => other.into(),
+        };
+        Ok(FunctionArg::Unnamed(arg_expr))
     }
 
     fn parse_function_named_arg_operator(&mut self) -> Result<FunctionArgOperator, ParserError> {
