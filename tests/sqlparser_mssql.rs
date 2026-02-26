@@ -2730,3 +2730,56 @@ fn parse_mssql_tran_shorthand() {
     // ROLLBACK TRAN normalizes to ROLLBACK (same as ROLLBACK TRANSACTION)
     ms().one_statement_parses_to("ROLLBACK TRAN", "ROLLBACK");
 }
+
+#[test]
+fn test_tsql_statement_keywords_not_implicit_aliases() {
+    // T-SQL statement-starting keywords must never be consumed as implicit
+    // aliases for a preceding SELECT item or table reference when using
+    // newline-delimited multi-statement scripts.
+
+    // Without the fix, the parser would consume a statement-starting keyword
+    // as an implicit alias for the preceding SELECT item or table reference,
+    // then fail on the next token. Verify parsing succeeds and each input
+    // produces the expected number of statements.
+
+    // Keywords that should not become implicit column aliases
+    let col_alias_cases: &[(&str, usize)] = &[
+        ("select 1\ndeclare @x as int", 2),
+        ("select 1\nexec sp_who", 2),
+        ("select 1\ninsert into t values (1)", 2),
+        ("select 1\nupdate t set col=1", 2),
+        ("select 1\ndelete from t", 2),
+        ("select 1\ndrop table t", 2),
+        ("select 1\ncreate table t (id int)", 2),
+        ("select 1\nalter table t add col int", 2),
+        ("select 1\nreturn", 2),
+    ];
+    for (sql, expected) in col_alias_cases {
+        let stmts = tsql()
+            .parse_sql_statements(sql)
+            .unwrap_or_else(|e| panic!("failed to parse {sql:?}: {e}"));
+        assert_eq!(
+            stmts.len(),
+            *expected,
+            "expected {expected} stmts for: {sql:?}"
+        );
+    }
+
+    // Keywords that should not become implicit table aliases
+    let tbl_alias_cases: &[(&str, usize)] = &[
+        ("select * from t\ndeclare @x as int", 2),
+        ("select * from t\ndrop table t", 2),
+        ("select * from t\ncreate table u (id int)", 2),
+        ("select * from t\nexec sp_who", 2),
+    ];
+    for (sql, expected) in tbl_alias_cases {
+        let stmts = tsql()
+            .parse_sql_statements(sql)
+            .unwrap_or_else(|e| panic!("failed to parse {sql:?}: {e}"));
+        assert_eq!(
+            stmts.len(),
+            *expected,
+            "expected {expected} stmts for: {sql:?}"
+        );
+    }
+}
