@@ -17343,7 +17343,9 @@ fn test_select_exclude() {
         SelectItem::Wildcard(WildcardAdditionalOptions { opt_exclude, .. }) => {
             assert_eq!(
                 *opt_exclude,
-                Some(ExcludeSelectItem::Single(Ident::new("c1")))
+                Some(ExcludeSelectItem::Single(ObjectName::from(Ident::new(
+                    "c1"
+                ))))
             );
         }
         _ => unreachable!(),
@@ -17356,8 +17358,8 @@ fn test_select_exclude() {
             assert_eq!(
                 *opt_exclude,
                 Some(ExcludeSelectItem::Multiple(vec![
-                    Ident::new("c1"),
-                    Ident::new("c2")
+                    ObjectName::from(Ident::new("c1")),
+                    ObjectName::from(Ident::new("c2")),
                 ]))
             );
         }
@@ -17368,7 +17370,9 @@ fn test_select_exclude() {
         SelectItem::Wildcard(WildcardAdditionalOptions { opt_exclude, .. }) => {
             assert_eq!(
                 *opt_exclude,
-                Some(ExcludeSelectItem::Single(Ident::new("c1")))
+                Some(ExcludeSelectItem::Single(ObjectName::from(Ident::new(
+                    "c1"
+                ))))
             );
         }
         _ => unreachable!(),
@@ -17390,7 +17394,9 @@ fn test_select_exclude() {
     }
     assert_eq!(
         select.exclude,
-        Some(ExcludeSelectItem::Single(Ident::new("c1")))
+        Some(ExcludeSelectItem::Single(ObjectName::from(Ident::new(
+            "c1"
+        ))))
     );
 
     let dialects = all_dialects_where(|d| {
@@ -17401,7 +17407,9 @@ fn test_select_exclude() {
         SelectItem::Wildcard(WildcardAdditionalOptions { opt_exclude, .. }) => {
             assert_eq!(
                 *opt_exclude,
-                Some(ExcludeSelectItem::Single(Ident::new("c1")))
+                Some(ExcludeSelectItem::Single(ObjectName::from(Ident::new(
+                    "c1"
+                ))))
             );
         }
         _ => unreachable!(),
@@ -17436,6 +17444,32 @@ fn test_select_exclude() {
             .unwrap(),
         ParserError::ParserError("Expected: end of statement, found: EXCLUDE".to_string())
     );
+}
+
+#[test]
+fn test_select_exclude_qualified_names() {
+    // EXCLUDE should accept qualified names like `f.col` parsed as ObjectName.
+    let dialects = all_dialects_where(|d| d.supports_select_wildcard_exclude());
+
+    // Qualified name in multi-column EXCLUDE list: f.* EXCLUDE (f.col1, f.col2)
+    let select = dialects
+        .verified_only_select("SELECT f.* EXCLUDE (f.account_canonical_id, f.amount) FROM t AS f");
+    match &select.projection[0] {
+        SelectItem::QualifiedWildcard(_, WildcardAdditionalOptions { opt_exclude, .. }) => {
+            assert_eq!(
+                *opt_exclude,
+                Some(ExcludeSelectItem::Multiple(vec![
+                    ObjectName::from(vec![Ident::new("f"), Ident::new("account_canonical_id")]),
+                    ObjectName::from(vec![Ident::new("f"), Ident::new("amount")]),
+                ]))
+            );
+        }
+        _ => unreachable!(),
+    }
+
+    // Plain identifiers must still parse successfully.
+    dialects.verified_only_select("SELECT f.* EXCLUDE (account_canonical_id) FROM t AS f");
+    dialects.verified_only_select("SELECT f.* EXCLUDE (col1, col2) FROM t AS f");
 }
 
 #[test]

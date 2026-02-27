@@ -1849,8 +1849,8 @@ impl Spanned for IlikeSelectItem {
 impl Spanned for ExcludeSelectItem {
     fn span(&self) -> Span {
         match self {
-            ExcludeSelectItem::Single(ident) => ident.span,
-            ExcludeSelectItem::Multiple(vec) => union_spans(vec.iter().map(|i| i.span)),
+            ExcludeSelectItem::Single(name) => name.span(),
+            ExcludeSelectItem::Multiple(vec) => union_spans(vec.iter().map(|i| i.span())),
         }
     }
 }
