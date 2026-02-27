@@ -13309,6 +13309,9 @@ impl<'a> Parser<'a> {
         };
 
         let from = self.parse_comma_separated(Parser::parse_table_and_joins)?;
+
+        let output = self.maybe_parse_output_clause()?;
+
         let using = if self.parse_keyword(Keyword::USING) {
             Some(self.parse_comma_separated(Parser::parse_table_and_joins)?)
         } else {
@@ -13347,6 +13350,7 @@ impl<'a> Parser<'a> {
             using,
             selection,
             returning,
+            output,
             order_by,
             limit,
         }))
@@ -17275,10 +17279,10 @@ impl<'a> Parser<'a> {
 
             let is_mysql = dialect_of!(self is MySqlDialect);
 
-            let (columns, partitioned, after_columns, source, assignments) = if self
+            let (columns, partitioned, after_columns, output, source, assignments) = if self
                 .parse_keywords(&[Keyword::DEFAULT, Keyword::VALUES])
             {
-                (vec![], None, vec![], None, vec![])
+                (vec![], None, vec![], None, None, vec![])
             } else {
                 let (columns, partitioned, after_columns) = if !self.peek_subquery_start() {
                     let columns = self.parse_parenthesized_column_list(Optional, is_mysql)?;
@@ -17295,6 +17299,8 @@ impl<'a> Parser<'a> {
                     Default::default()
                 };
 
+                let output = self.maybe_parse_output_clause()?;
+
                 let (source, assignments) = if self.peek_keyword(Keyword::FORMAT)
                     || self.peek_keyword(Keyword::SETTINGS)
                 {
@@ -17305,7 +17311,14 @@ impl<'a> Parser<'a> {
                     (Some(self.parse_query()?), vec![])
                 };
 
-                (columns, partitioned, after_columns, source, assignments)
+                (
+                    columns,
+                    partitioned,
+                    after_columns,
+                    output,
+                    source,
+                    assignments,
+                )
             };
 
             let (format_clause, settings) = if self.dialect.supports_insert_format() {
@@ -17407,6 +17420,7 @@ impl<'a> Parser<'a> {
                 has_table_keyword: table,
                 on,
                 returning,
+                output,
                 replace_into,
                 priority,
                 insert_alias,
@@ -17512,6 +17526,9 @@ impl<'a> Parser<'a> {
         };
         self.expect_keyword(Keyword::SET)?;
         let assignments = self.parse_comma_separated(Parser::parse_assignment)?;
+
+        let output = self.maybe_parse_output_clause()?;
+
         let from = if from_before_set.is_none() && self.parse_keyword(Keyword::FROM) {
             Some(UpdateTableFromKind::AfterSet(
                 self.parse_table_with_joins()?,
@@ -17542,6 +17559,7 @@ impl<'a> Parser<'a> {
             from,
             selection,
             returning,
+            output,
             or,
             limit,
         }

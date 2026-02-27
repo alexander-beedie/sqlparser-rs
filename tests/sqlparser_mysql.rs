@@ -2671,6 +2671,7 @@ fn parse_update_with_joins() {
             limit: None,
             optimizer_hints,
             update_token: _,
+            output: _,
         }) if optimizer_hints.is_empty() => {
             assert_eq!(
                 TableWithJoins {

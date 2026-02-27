@@ -1784,6 +1784,7 @@ fn parse_multi_table_insert(
         has_table_keyword: false,
         on: None,
         returning: None,
+        output: None,
         replace_into: false,
         priority: None,
         insert_alias: None,
