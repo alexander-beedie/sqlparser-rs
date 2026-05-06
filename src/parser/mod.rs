@@ -6418,6 +6418,12 @@ impl<'a> Parser<'a> {
             None
         };
         let location = hive_formats.as_ref().and_then(|hf| hf.location.clone());
+
+        let with_connection = if self.parse_keywords(&[Keyword::WITH, Keyword::CONNECTION]) {
+            Some(self.parse_object_name(false)?)
+        } else {
+            None
+        };
         let table_properties = self.parse_options(Keyword::TBLPROPERTIES)?;
         let table_options = if !table_properties.is_empty() {
             CreateTableOptions::TableProperties(table_properties)
@@ -6432,6 +6438,7 @@ impl<'a> Parser<'a> {
             .hive_distribution(hive_distribution)
             .hive_formats(hive_formats)
             .table_options(table_options)
+            .with_connection(with_connection)
             .or_replace(or_replace)
             .if_not_exists(if_not_exists)
             .external(true)
